@@ -285,11 +285,11 @@ function renderBar(r){
     c0.appendChild(bar); seg=se+1;
   }
 }
-let dragStartX=0,dragStartY=0,dragActive=false;
-function onMD(e){if(e.button!==0)return;const td=e.currentTarget;dragStartX=e.clientX;dragStartY=e.clientY;dragActive=false;drag={cid:td.dataset.cid,si:+td.dataset.di,ei:+td.dataset.di};}
-function onME(e){if(!drag)return;const td=e.currentTarget;if(td.dataset.cid!==drag.cid)return;const dx=Math.abs(e.clientX-dragStartX),dy=Math.abs(e.clientY-dragStartY);if(dx>4&&dx>dy){dragActive=true;e.preventDefault();}drag.ei=+td.dataset.di;if(dragActive)hilite();}
-function onMU(e){if(!drag)return;const td=e.currentTarget;drag.ei=+td.dataset.di;clearHilite();const si=Math.min(drag.si,drag.ei),ei=Math.max(drag.si,drag.ei);const cid=drag.cid;drag=null;dragActive=false;openNewRental(cid,si,ei);}
-document.addEventListener('mouseup',()=>{if(drag){clearHilite();drag=null;dragActive=false;}});
+let dragScrolling=false;
+function onMD(e){if(e.button!==0)return;const td=e.currentTarget;dragScrolling=false;drag={cid:td.dataset.cid,si:+td.dataset.di,ei:+td.dataset.di};}
+function onME(e){if(!drag)return;const td=e.currentTarget;if(td.dataset.cid!==drag.cid)return;drag.ei=+td.dataset.di;hilite();}
+function onMU(e){if(!drag)return;const td=e.currentTarget;drag.ei=+td.dataset.di;clearHilite();const si=Math.min(drag.si,drag.ei),ei=Math.max(drag.si,drag.ei);const cid=drag.cid;drag=null;openNewRental(cid,si,ei);}
+document.addEventListener('mouseup',()=>{if(drag){clearHilite();drag=null;}});
 function hilite(){clearHilite();if(!drag)return;const si=Math.min(drag.si,drag.ei),ei=Math.max(drag.si,drag.ei);const row=document.querySelector(`tr[data-cid="${drag.cid}"]`);if(!row)return;row.querySelectorAll('td.dcell').forEach(td=>{const i=+td.dataset.di;if(i>=si&&i<=ei)td.classList.add('sel')})}
 function clearHilite(){document.querySelectorAll('.dcell.sel').forEach(td=>td.classList.remove('sel'))}
 function checkAvail(){
@@ -415,6 +415,33 @@ function saveRental(){
   if(curRid){const i=rentals.findIndex(x=>x.id===curRid);if(i>=0)rentals[i]=r;}
   else rentals.push(r);
   fbSet('rentals',r.id,r);
+  // Crea/aggiorna cliente automaticamente se ha almeno cognome o nome
+  if(r.cognome||r.nome){
+    const existingClient = clients.find(c=>
+      c.cf&&r.cf&&c.cf.toUpperCase()===r.cf.toUpperCase() ||
+      (c.cognome===r.cognome && c.nome===r.nome && r.cognome)
+    );
+    if(!existingClient){
+      const newClient={
+        id:'cl'+Date.now(),
+        cognome:r.cognome||'',
+        nome:r.nome||'',
+        cf:r.cf||'',
+        patente:r.patente||'',
+        indirizzo:r.indirizzo||'',
+        tel:r.tel||'',
+        email:r.email||'',
+        note:''
+      };
+      clients.push(newClient);
+      fbSet('clients',newClient.id,newClient);
+    } else {
+      // Aggiorna campi vuoti con quelli nuovi
+      let updated=false;
+      ['cf','patente','indirizzo','tel','email'].forEach(f=>{if(!existingClient[f]&&r[f]){existingClient[f]=r[f];updated=true;}});
+      if(updated) fbSet('clients',existingClient.id,existingClient);
+    }
+  };
   showSync('Salvato ✓');
   closeM('mRental'); buildTable(); toast('Noleggio salvato ✓');
 }
