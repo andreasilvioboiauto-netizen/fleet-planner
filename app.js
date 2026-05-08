@@ -716,3 +716,4 @@ function confirmClear(){
 function closeM(id){document.getElementById(id).classList.remove('open')}
 document.querySelectorAll('.overlay').forEach(o=>o.addEventListener('click',e=>{if(e.target===o)o.classList.remove('open')}));
 function toast(msg,type=''){const el=document.getElementById('toast');el.textContent=msg;el.className='toast'+(type==='err'?' err':'')+' show';setTimeout(()=>el.className='toast'+(type==='err'?' err':''),2800)}
+
