@@ -414,8 +414,8 @@ header{background:var(--surf);border-bottom:1px solid var(--border);height:52px;
     <div class="fsec">
       <div class="fsec-t">Periodo</div>
       <div class="fg t3">
-        <div class="ff"><label>Data inizio</label><div class="ro-val" id="dStart">—</div></div>
-        <div class="ff"><label>Data fine</label><div class="ro-val" id="dEnd">—</div></div>
+        <div class="ff"><label>Data inizio</label><input type="date" id="dStart" oninput="updateDaysCount()" style="background:var(--navy,#1e2535);border:1px solid rgba(245,158,11,.4);border-radius:6px;color:var(--accent,#f5a623);font-size:12px;padding:7px 9px;outline:none;width:100%;cursor:pointer"></div>
+        <div class="ff"><label>Data fine</label><input type="date" id="dEnd" oninput="updateDaysCount()" style="background:var(--navy,#1e2535);border:1px solid rgba(245,158,11,.4);border-radius:6px;color:var(--accent,#f5a623);font-size:12px;padding:7px 9px;outline:none;width:100%;cursor:pointer"></div>
         <div class="ff"><label>Giorni</label><div class="ro-val" id="dDays">—</div></div>
       </div>
     </div>

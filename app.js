@@ -26,7 +26,8 @@ async function fbSet(collection, id, data){
   try{
     const{db,doc,setDoc}=window._fb;
     await setDoc(doc(db,'users',uid(),collection,id),data);
-  }catch(e){console.error('fbSet error',e);toast('Errore salvataggio cloud','err')}
+    if(['cars','rentals','clients'].includes(collection)){try{localStorage.setItem('fp_'+collection+'_'+uid(),JSON.stringify(collection==='cars'?cars:collection==='rentals'?rentals:clients));}catch(_){}}
+  }catch(e){console.error('fbSet error',e);toast('Errore connessione','err');['cars','rentals','clients'].includes(collection)&&(()=>{try{localStorage.setItem('fp_'+collection+'_'+uid(),JSON.stringify(collection==='cars'?cars:collection==='rentals'?rentals:clients));}catch(_){}})()}
 }
 
 async function fbGetAll(col){
@@ -281,10 +282,11 @@ function renderBar(r){
     c0.appendChild(bar); seg=se+1;
   }
 }
-function onMD(e){if(e.button!==0)return;const td=e.currentTarget;drag={cid:td.dataset.cid,si:+td.dataset.di,ei:+td.dataset.di};hilite();e.preventDefault()}
-function onME(e){if(!drag)return;const td=e.currentTarget;if(td.dataset.cid!==drag.cid)return;drag.ei=+td.dataset.di;hilite()}
-function onMU(e){if(!drag)return;const td=e.currentTarget;drag.ei=+td.dataset.di;clearHilite();const si=Math.min(drag.si,drag.ei),ei=Math.max(drag.si,drag.ei);openNewRental(drag.cid,si,ei);drag=null}
-document.addEventListener('mouseup',()=>{if(drag){clearHilite();drag=null}});
+let dragStartX=0,dragStartY=0,dragActive=false;
+function onMD(e){if(e.button!==0)return;const td=e.currentTarget;dragStartX=e.clientX;dragStartY=e.clientY;dragActive=false;drag={cid:td.dataset.cid,si:+td.dataset.di,ei:+td.dataset.di};}
+function onME(e){if(!drag)return;const td=e.currentTarget;if(td.dataset.cid!==drag.cid)return;const dx=Math.abs(e.clientX-dragStartX),dy=Math.abs(e.clientY-dragStartY);if(!dragActive&&(dx>4||dy>4)){if(dx>=dy){dragActive=true;e.preventDefault();}else{drag=null;return;}}if(!dragActive)return;drag.ei=+td.dataset.di;hilite();}
+function onMU(e){if(!drag)return;drag.ei=+e.currentTarget.dataset.di;clearHilite();const si=Math.min(drag.si,drag.ei),ei=Math.max(drag.si,drag.ei);openNewRental(drag.cid,si,ei);drag=null;dragActive=false;}
+document.addEventListener('mouseup',()=>{if(drag){clearHilite();drag=null;dragActive=false;}});
 function hilite(){clearHilite();if(!drag)return;const si=Math.min(drag.si,drag.ei),ei=Math.max(drag.si,drag.ei);const row=document.querySelector(`tr[data-cid="${drag.cid}"]`);if(!row)return;row.querySelectorAll('td.dcell').forEach(td=>{const i=+td.dataset.di;if(i>=si&&i<=ei)td.classList.add('sel')})}
 function clearHilite(){document.querySelectorAll('.dcell.sel').forEach(td=>td.classList.remove('sel'))}
 function checkAvail(){
@@ -351,12 +353,20 @@ function openEditRental(rid){
   document.getElementById('mRental').classList.add('open');
 }
 function setRO(si,ei){
-  document.getElementById('dStart').textContent=fd(dk(DAYS[si]));
-  document.getElementById('dEnd').textContent=fd(dk(DAYS[ei]));
-  document.getElementById('dDays').textContent=(ei-si+1)+' gg';
+  const sk=dk(DAYS[si]);const ek=dk(DAYS[ei]);
+  const sIn=document.getElementById('dStart');const eIn=document.getElementById('dEnd');
+  if(sIn)sIn.value=sk;if(eIn)eIn.value=ek;
+  updateDaysCount();
   const car=cars.find(c=>c.id===curCid)||{targa:'—',model:'—'};
   document.getElementById('dTarga').textContent=car.targa;
   document.getElementById('dModello').textContent=car.model;
+}
+function updateDaysCount(){
+  const sv=document.getElementById('dStart')?.value;const ev=document.getElementById('dEnd')?.value;
+  if(!sv||!ev)return;
+  const si=DAYS.findIndex(d=>dk(d)===sv);const ei=DAYS.findIndex(d=>dk(d)===ev);
+  if(si>=0&&ei>=0&&ei>=si){curSi=si;curEi=ei;document.getElementById('dDays').textContent=(ei-si+1)+' gg';checkConflict(curCid,si,ei,curRid);const stag=getStagione(sv);const sEl=document.getElementById('dStagione');if(sEl){const cols={alta:'#ef4444',media:'#f59e0b',bassa:'#10b981'};sEl.textContent='● Stagione '+stag.toUpperCase();sEl.style.color=cols[stag]||'var(--text2)';}calcTot();}
+  else document.getElementById('dDays').textContent='—';
 }
 function checkConflict(cid,si,ei,xid){
   const c=rentals.some(r=>{
@@ -369,7 +379,11 @@ function checkConflict(cid,si,ei,xid){
 }
 function gv(id){const el=document.getElementById(id);return el?el.value.trim():''}
 function saveRental(){
-  const days=curEi-curSi+1;
+  const _sk=document.getElementById('dStart')?.value||dk(DAYS[curSi]);
+  const _ek=document.getElementById('dEnd')?.value||dk(DAYS[curEi]);
+  const _siF=DAYS.findIndex(d=>dk(d)===_sk);const _eiF=DAYS.findIndex(d=>dk(d)===_ek);
+  const _si=_siF>=0?_siF:curSi,_ei=_eiF>=0?_eiF:curEi;curSi=_si;curEi=_ei;
+  const days=Math.max(1,_ei-_si+1);
   const p=parseFloat(gv('f_prezzo'))||0;
   const sp=parseFloat(gv('f_sp'))||0, se2=parseFloat(gv('f_se'))||0;
   const base=days*p, sc=se2>0?se2:base*sp/100, net=base-sc, iva=net*.22, tot=net+iva;
