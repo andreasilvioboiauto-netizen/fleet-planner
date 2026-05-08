@@ -78,9 +78,12 @@ async function fbLoadAll(){
     const settingsSnap = await getDoc(doc(db,'users',uid(),'meta','settings'));
     const ctrSnap      = await getDoc(doc(db,'users',uid(),'meta','ctr'));
 
-    cars    = carsData.length ? carsData    : [{id:'c1',targa:'AA123BB',model:'Fiat Panda 1.2',color:'#2563eb',ass:'',bollo:'',rev:'',note:''},{id:'c2',targa:'BB456CC',model:'Ford Focus Diesel',color:'#0891b2',ass:'',bollo:'',rev:'',note:''}];
-    rentals = rentalsData;
-    clients = clientsData;
+    if(carsData.length){cars=carsData;try{localStorage.setItem('fp_cars_'+uid(),JSON.stringify(cars));}catch(_){}}
+    else{const _lsC=localStorage.getItem('fp_cars_'+uid());cars=_lsC?JSON.parse(_lsC):[];}
+    if(rentalsData.length){rentals=rentalsData;try{localStorage.setItem('fp_rentals_'+uid(),JSON.stringify(rentals));}catch(_){}}
+    else{const _lsR=localStorage.getItem('fp_rentals_'+uid());rentals=_lsR?JSON.parse(_lsR):[];}
+    if(clientsData.length){clients=clientsData;try{localStorage.setItem('fp_clients_'+uid(),JSON.stringify(clients));}catch(_){}}
+    else{const _lsC2=localStorage.getItem('fp_clients_'+uid());clients=_lsC2?JSON.parse(_lsC2):[];}
     settings= settingsSnap.exists()?settingsSnap.data():{agency:'',address:'',phone:'',email:'',piva:'',foro:'',clauses:''};
     ctrCounter = ctrSnap.exists()?ctrSnap.data().value:1;
 
