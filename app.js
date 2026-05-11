@@ -217,6 +217,9 @@ function buildTable(){
       td.addEventListener('mousedown',onMD);
       td.addEventListener('mouseenter',onME);
       td.addEventListener('mouseup',onMU);
+      td.addEventListener('touchstart',onTouchStart,{passive:true});
+      td.addEventListener('touchmove',onTouchMove,{passive:false});
+      td.addEventListener('touchend',onTouchEnd);
       tr.appendChild(td);
     });
     t.appendChild(tr);
@@ -289,10 +292,32 @@ function renderBar(r){
   }
 }
 let dragScrolling=false;
-function onMD(e){if(e.button!==0)return;const td=e.currentTarget;dragScrolling=false;drag={cid:td.dataset.cid,si:+td.dataset.di,ei:+td.dataset.di};}
-function onME(e){if(!drag)return;const td=e.currentTarget;if(td.dataset.cid!==drag.cid)return;drag.ei=+td.dataset.di;hilite();}
-function onMU(e){if(!drag)return;const td=e.currentTarget;drag.ei=+td.dataset.di;clearHilite();const si=Math.min(drag.si,drag.ei),ei=Math.max(drag.si,drag.ei);const cid=drag.cid;drag=null;openNewRental(cid,si,ei);}
+function onMD(e){
+  if(e.button!==0)return;
+  const td=e.currentTarget;
+  drag={cid:td.dataset.cid,si:+td.dataset.di,ei:+td.dataset.di};
+}
+function onME(e){
+  if(!drag)return;
+  const td=e.currentTarget;
+  if(td.dataset.cid!==drag.cid)return;
+  drag.ei=+td.dataset.di;
+  hilite();
+}
+function onMU(e){
+  if(!drag)return;
+  drag.ei=+e.currentTarget.dataset.di;
+  clearHilite();
+  const si=Math.min(drag.si,drag.ei),ei=Math.max(drag.si,drag.ei);
+  const cid=drag.cid; drag=null;
+  openNewRental(cid,si,ei);
+}
 document.addEventListener('mouseup',()=>{if(drag){clearHilite();drag=null;}});
+// Touch drag per mobile
+function onTouchStart(e){const td=e.currentTarget;drag={cid:td.dataset.cid,si:+td.dataset.di,ei:+td.dataset.di};hilite();}
+function onTouchMove(e){if(!drag)return;e.preventDefault();const t=e.touches[0];const el=document.elementFromPoint(t.clientX,t.clientY);if(el&&el.dataset&&el.dataset.di&&el.dataset.cid===drag.cid){drag.ei=+el.dataset.di;hilite();}}
+function onTouchEnd(e){if(!drag)return;clearHilite();const si=Math.min(drag.si,drag.ei),ei=Math.max(drag.si,drag.ei);const cid=drag.cid;drag=null;openNewRental(cid,si,ei);}
+document.addEventListener('touchend',()=>{if(drag){clearHilite();drag=null;}});
 function hilite(){clearHilite();if(!drag)return;const si=Math.min(drag.si,drag.ei),ei=Math.max(drag.si,drag.ei);const row=document.querySelector(`tr[data-cid="${drag.cid}"]`);if(!row)return;row.querySelectorAll('td.dcell').forEach(td=>{const i=+td.dataset.di;if(i>=si&&i<=ei)td.classList.add('sel')})}
 function clearHilite(){document.querySelectorAll('.dcell.sel').forEach(td=>td.classList.remove('sel'))}
 function checkAvail(){
@@ -613,13 +638,16 @@ function renderStats(){
   yRentals.forEach(r=>{if(!r.startKey)return;const m=parseInt(r.startKey.split('-')[1])-1;if(m>=0&&m<12)monthly[m]+=parseFloat(r.totale)||0;});
   const maxMon=Math.max(...monthly,1);
   const carOcc=cars.map(car=>{
-    let d=0;
-    rentals.filter(r=>r.carId===car.id).forEach(r=>{const si=dArr.findIndex(x=>dk(x)===r.startKey),ei=dArr.findIndex(x=>dk(x)===r.endKey);if(si>=0&&ei>=0)d+=ei-si+1});
-    return{car,days:d,pct:Math.min(100,Math.round(d/totalDays*100))};
-  }).sort((a,b)=>b.pct-a.pct);
+    let d=0,rev=0,nole=0;
+    rentals.filter(r=>r.carId===car.id&&r.startKey&&r.startKey.startsWith(curYear)).forEach(r=>{
+      const si=dArr.findIndex(x=>dk(x)===r.startKey),ei=dArr.findIndex(x=>dk(x)===r.endKey);
+      if(si>=0&&ei>=0)d+=ei-si+1;
+      rev+=parseFloat(r.totale)||0; nole++;
+    });
+    return{car,days:d,pct:Math.min(100,Math.round(d/totalDays*100)),rev,nole};
+  }).sort((a,b)=>b.rev-a.rev);
   wrap.innerHTML=`<div class="stats-grid"><div class="kpi"><div class="kpi-val">${yRentals.length}</div><div class="kpi-lbl">Noleggi ${curYear}</div></div><div class="kpi"><div class="kpi-val">€ ${Math.round(totalRev).toLocaleString('it')}</div><div class="kpi-lbl">Incasso totale (IVA incl.)</div></div><div class="kpi"><div class="kpi-val">${totalRented}</div><div class="kpi-lbl">Giorni noleggiati</div></div><div class="kpi"><div class="kpi-val">${avgDays}</div><div class="kpi-lbl">Durata media (gg)</div></div></div>
-  <div class="chart-row"><div class="chart-box"><div class="chart-title">Incasso mensile (€)</div><div class="bar-chart">${MONTHS.map((m,i)=>`<div class="bc-row"><div class="bc-lbl">${m.slice(0,3)}</div><div class="bc-track"><div class="bc-fill" style="width:${(monthly[i]/maxMon*100).toFixed(1)}%"></div></div><div class="bc-val">€ ${Math.round(monthly[i]).toLocaleString('it')}</div></div>`).join('')}</div></div>
-  <div class="chart-box"><div class="chart-title">Occupazione per auto</div><div class="occ-grid">${carOcc.map(o=>`<div class="occ-item"><div class="occ-targa" style="color:${o.car.color||'var(--accent)'}">${o.car.targa}</div><div class="occ-model">${o.car.model}</div><div class="occ-pct" style="color:${o.pct>70?'var(--green)':o.pct>40?'var(--accent)':'var(--text)'}">${o.pct}%<span style="font-size:9px;color:var(--text3);margin-left:4px">${o.days}gg</span></div><div class="occ-bar"><div class="occ-fill" style="width:${o.pct}%;background:${o.car.color||'var(--green)'}"></div></div></div>`).join('')}</div></div></div>
+  <div class="chart-row"><div class="chart-box"><div class="chart-title">Incasso mensile (€)</div><div class="bar-chart">${MONTHS.map((m,i)=>`<div class="bc-row"><div class="bc-lbl">${m.slice(0,3)}</div><div class="bc-track"><div class="bc-fill" style="width:${(monthly[i]/maxMon*100).toFixed(1)}%"></div></div><div class="bc-val">€ ${Math.round(monthly[i]).toLocaleString('it')}</div></div>`<div class="chart-box" style="overflow-x:auto"><div class="chart-title">💰 Ricavo e occupazione per auto — ${curYear}</div><table style="width:100%;border-collapse:collapse;font-size:12px;margin-top:8px"><thead><tr style="border-bottom:1px solid rgba(255,255,255,.1)"><th style="text-align:left;padding:5px 8px;color:var(--text3);font-weight:500">Auto</th><th style="text-align:center;padding:5px 8px;color:var(--text3);font-weight:500">N°</th><th style="text-align:center;padding:5px 8px;color:var(--text3);font-weight:500">GG</th><th style="text-align:center;padding:5px 8px;color:var(--text3);font-weight:500">Occ%</th><th style="text-align:right;padding:5px 8px;color:var(--text3);font-weight:500">Ricavo</th></tr></thead><tbody>${carOcc.map(o=>{const col=o.car.color||'var(--accent)';return '<tr style="border-bottom:1px solid rgba(255,255,255,.04)"><td style="padding:5px 8px"><span style="color:'+col+';font-weight:600;font-size:11px">'+o.car.targa+'</span><div style="font-size:10px;color:var(--text3)">'+o.car.model+'</div></td><td style="text-align:center;padding:5px 8px;color:var(--text2)">'+o.nole+'</td><td style="text-align:center;padding:5px 8px;color:var(--text2)">'+o.days+'</td><td style="padding:5px 8px"><div style="display:flex;align-items:center;gap:4px"><div style="flex:1;height:5px;background:rgba(255,255,255,.08);border-radius:3px"><div style="width:'+o.pct+'%;height:100%;background:'+col+';border-radius:3px"></div></div><span style="font-size:10px;color:var(--text3);width:26px;text-align:right">'+o.pct+'%</span></div></td><td style="text-align:right;padding:5px 8px;font-weight:700;font-family:DM Mono,monospace;color:'+(o.rev>0?'var(--green)':'var(--text3)')+'">'+( o.rev>0?'€ '+Math.round(o.rev).toLocaleString('it'):'—')+'</td></tr>';}).join('')}<tr style="border-top:2px solid rgba(255,255,255,.15)"><td style="padding:6px 8px;font-weight:600">TOTALE ${curYear}</td><td style="text-align:center;padding:6px 8px;font-weight:600">${carOcc.reduce(function(s,o){return s+o.nole;},0)}</td><td style="text-align:center;padding:6px 8px;font-weight:600">${carOcc.reduce(function(s,o){return s+o.days;},0)}</td><td></td><td style="text-align:right;padding:6px 8px;font-weight:700;font-family:DM Mono,monospace;color:var(--green)">€ ${Math.round(carOcc.reduce(function(s,o){return s+o.rev;},0)).toLocaleString('it')}</td></tr></tbody></table></div>`).join('')}</div></div></div>
   ${totalPending>0?`<div class="chart-box" style="background:rgba(239,68,68,.08);border-color:rgba(239,68,68,.25);max-width:300px"><div class="chart-title" style="color:#fca5a5">Saldo da incassare</div><div style="font-size:22px;font-weight:600;font-family:'DM Mono',monospace;color:#fca5a5">€ ${Math.round(totalPending).toLocaleString('it')}</div></div>`:''}`;
 }
 
