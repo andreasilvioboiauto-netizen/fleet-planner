@@ -9,7 +9,7 @@ const TODAY=new Date(); TODAY.setHours(0,0,0,0);
 let curYear=TODAY.getFullYear();
 let DAYS=[];
 // In-memory state (sincronizzato da Firebase)
-let cars=[], rentals=[], clients=[], settings={agency:'',address:'',phone:'',email:'',piva:'',foro:'',clauses:''};
+let cars=[], rentals=[], clients=[], settings={agency:'',address:'',phone:'',email:'',piva:'',foro:'',clauses:'',stagioni:{alta:{from:'07-01',to:'08-31'},media:{from:'06-01',to:'06-30'}},listino:{A:{alta:30,media:25,bassa:20},B:{alta:50,media:40,bassa:35},C:{alta:60,media:50,bassa:40},D:{alta:70,media:60,bassa:50},E:{alta:100,media:80,bassa:65}}};
 let ctrCounter=1;
 let listSortKey='inizio', listSortDir=-1;
 let drag=null, selColor=RCOLS[0];
@@ -155,8 +155,10 @@ function dIdx(key){return DAYS.findIndex(d=>dk(d)===key)}
 // ---
 // NAVIGATION
 // ---
+function getStagione(dk){if(!dk)return"bassa";const md=dk.substring(5);const s=settings.stagioni||{alta:{from:"07-01",to:"08-31"},media:{from:"06-01",to:"06-30"}};if(md>=s.alta.from&&md<=s.alta.to)return"alta";if(s.media&&md>=s.media.from&&md<=s.media.to)return"media";return"bassa";}
+function getPrezzoSuggerito(cat,dk){const st=getStagione(dk);const l=settings.listino||{};return(l[cat]&&l[cat][st])||0;}
+
 function changeYear(d){curYear+=d;document.getElementById('yearVal').textContent=curYear;DAYS=getDays(curYear);buildTable();populateListFilters()}
-function goToday(){curYear=new Date().getFullYear();DAYS=getDays(curYear);document.getElementById('yearVal').textContent=curYear;buildTable();}
 function showPage(id,btn){
   document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
   document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
