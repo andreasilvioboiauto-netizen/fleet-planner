@@ -1,8 +1,6 @@
 // ---
 // CONSTANTS AND STATE
 // ---
-// ID azienda: tutti gli utenti autenticati condividono questi dati
-const COMPANY_ID='silvio-boi-auto';
 const MONTHS=['Gennaio','Febbraio','Marzo','Aprile','Maggio','Giugno','Luglio','Agosto','Settembre','Ottobre','Novembre','Dicembre'];
 const RCOLS=['#2563eb','#0891b2','#059669','#d97706','#dc2626','#7c3aed','#db2777','#0d9488','#65a30d','#ea580c','#4f46e5','#0284c7','#16a34a','#ca8a04','#b91c1c'];
 const CATEGORIES=[['A','Economica'],['B','Compatta'],['C','Berlina/Familiare'],['D','SUV'],['E','Premium']];
@@ -28,21 +26,17 @@ let curRid=null, curCid=null, curSi=null, curEi=null;
 let curClientId=null, curCarEditId=null, selCarColor=RCOLS[0];
 
 // ---
-// FIREBASE STORAGE — dati condivisi tra tutti gli utenti dell'azienda
+// FIREBASE STORAGE
 // ---
 function uid(){return window._fbUser?window._fbUser.uid:null}
 
-// Tutti i path puntano a aziende/{COMPANY_ID}/... invece di users/{uid}/...
-// Le regole di sicurezza Firestore richiedono request.auth != null
-async function fbSet(coll, id, data){
+async function fbSet(collection, id, data){
   if(!uid())return;
   try{
     const{db,doc,setDoc}=window._fb;
-    // Aggiungo metadati di tracciabilità (utile in futuro per audit "chi ha modificato")
-    const payload={...data, _updatedBy:uid(), _updatedAt:Date.now()};
-    await setDoc(doc(db,'aziende',COMPANY_ID,coll,id),payload);
-    if(['cars','rentals','clients'].includes(coll)){
-      try{localStorage.setItem('fp_'+coll+'_'+COMPANY_ID,JSON.stringify(coll==='cars'?cars:coll==='rentals'?rentals:clients));}catch(_){}
+    await setDoc(doc(db,'users',uid(),collection,id),data);
+    if(['cars','rentals','clients'].includes(collection)){
+      try{localStorage.setItem('fp_'+collection+'_'+uid(),JSON.stringify(collection==='cars'?cars:collection==='rentals'?rentals:clients));}catch(_){}
     }
   }catch(e){
     console.error('fbSet error',e);
@@ -50,75 +44,51 @@ async function fbSet(coll, id, data){
   }
 }
 
-async function fbDelete(coll,id){
+async function fbGetAll(col){
+  if(!uid())return[];
+  try{
+    const{db,collection:col_,getDocs}=window._fb;
+    const snap=await getDocs(col_(db,'users',uid(),col));
+    return snap.docs.map(d=>d.data());
+  }catch(e){console.error('fbGetAll error',e);return[]}
+}
+
+async function fbDelete(col,id){
   if(!uid())return;
   try{
     const{db}=window._fb;
     const{deleteDoc,doc}=await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js');
-    await deleteDoc(doc(db,'aziende',COMPANY_ID,coll,id));
+    await deleteDoc(doc(db,'users',uid(),col,id));
   }catch(e){console.error('fbDelete error',e)}
 }
 
-// Listener real-time attivi (per cleanup al logout)
-let _unsubscribers=[];
-
-// Carica tutto da Firestore con listener real-time attivi.
-// Ogni modifica fatta da QUALSIASI dispositivo si propaga automaticamente.
+// Carica tutto da Firebase
 async function fbLoadAll(){
-  showSync('Connessione...');
-  // Pulisco listener precedenti se esistono (es. dopo cambio utente)
-  _unsubscribers.forEach(u=>{try{u()}catch(_){}});
-  _unsubscribers=[];
-
-  // 1) Carico la cache locale subito per evitare schermo vuoto durante la prima connessione
+  showSync('Caricamento...');
   try{
-    const cC=localStorage.getItem('fp_cars_'+COMPANY_ID);
-    const cR=localStorage.getItem('fp_rentals_'+COMPANY_ID);
-    const cL=localStorage.getItem('fp_clients_'+COMPANY_ID);
-    if(cC)cars=JSON.parse(cC);
-    if(cR)rentals=JSON.parse(cR);
-    if(cL)clients=JSON.parse(cL);
-  }catch(_){}
+    const [carsData, rentalsData, clientsData] = await Promise.all([
+      fbGetAll('cars'), fbGetAll('rentals'), fbGetAll('clients')
+    ]);
+    const{db,doc,getDoc}=window._fb;
+    const settingsSnap = await getDoc(doc(db,'users',uid(),'meta','settings'));
+    const ctrSnap = await getDoc(doc(db,'users',uid(),'meta','ctr'));
 
-  try{
-    const{db,doc,getDoc,collection:col_,onSnapshot}=window._fb;
+    if(carsData.length){cars=carsData;try{localStorage.setItem('fp_cars_'+uid(),JSON.stringify(cars));}catch(_){}}
+    else{const _lsC=localStorage.getItem('fp_cars_'+uid());cars=_lsC?JSON.parse(_lsC):[];}
 
-    // 2) Carico i settings + counter contratti (one-shot, non cambiano spesso)
-    const settingsSnap=await getDoc(doc(db,'aziende',COMPANY_ID,'meta','settings'));
-    const ctrSnap=await getDoc(doc(db,'aziende',COMPANY_ID,'meta','ctr'));
-    const loaded=settingsSnap.exists()?settingsSnap.data():{};
-    settings=mergeSettings(loaded);
-    ctrCounter=ctrSnap.exists()?(ctrSnap.data().value||1):1;
+    if(rentalsData.length){rentals=rentalsData;try{localStorage.setItem('fp_rentals_'+uid(),JSON.stringify(rentals));}catch(_){}}
+    else{const _lsR=localStorage.getItem('fp_rentals_'+uid());rentals=_lsR?JSON.parse(_lsR):[];}
 
-    // 3) Attivo listener real-time su cars, rentals, clients
-    const subscribe=(name, target)=>{
-      const unsub=onSnapshot(col_(db,'aziende',COMPANY_ID,name),snap=>{
-        const arr=snap.docs.map(d=>{const x=d.data();delete x._updatedBy;delete x._updatedAt;return x});
-        if(name==='cars'){cars=arr;}
-        else if(name==='rentals'){rentals=arr;}
-        else if(name==='clients'){clients=arr;}
-        try{localStorage.setItem('fp_'+name+'_'+COMPANY_ID,JSON.stringify(arr));}catch(_){}
-        // Refresh delle UI attive (solo della pagina visibile, per non perdere stato dei form aperti)
-        refreshActivePage();
-        showSync('Sincronizzato');
-      },err=>{
-        console.error('onSnapshot '+name+' error',err);
-        showSync('Errore sync','err');
-      });
-      _unsubscribers.push(unsub);
-    };
-    subscribe('cars');
-    subscribe('rentals');
-    subscribe('clients');
+    if(clientsData.length){clients=clientsData;try{localStorage.setItem('fp_clients_'+uid(),JSON.stringify(clients));}catch(_){}}
+    else{const _lsC2=localStorage.getItem('fp_clients_'+uid());clients=_lsC2?JSON.parse(_lsC2):[];}
 
-    // Listener anche su settings e counter (così Michele vede le tariffe aggiornate se le cambi tu)
-    _unsubscribers.push(onSnapshot(doc(db,'aziende',COMPANY_ID,'meta','settings'),s=>{
-      if(s.exists()){settings=mergeSettings(s.data());document.getElementById('agencyName').textContent=settings.agency||'Fleet Planner';}
-    }));
-    _unsubscribers.push(onSnapshot(doc(db,'aziende',COMPANY_ID,'meta','ctr'),s=>{
-      if(s.exists())ctrCounter=s.data().value||1;
-    }));
+    // Merge settings con default per garantire stagioni/listino presenti
+    const loaded = settingsSnap.exists()?settingsSnap.data():{};
+    settings = mergeSettings(loaded);
 
+    ctrCounter = ctrSnap.exists()?(ctrSnap.data().value||1):1;
+
+    showSync('Sincronizzato');
     DAYS=getDays(curYear);
     document.getElementById('yearVal').textContent=curYear;
     document.getElementById('agencyName').textContent=settings.agency||'Fleet Planner';
@@ -131,22 +101,6 @@ async function fbLoadAll(){
   }
 }
 window._fbLoadAll=fbLoadAll;
-
-// Refresh della pagina attualmente visibile (chiamato dai listener real-time).
-// Non refresha modal aperti per non perdere quello che l'utente sta scrivendo.
-function refreshActivePage(){
-  const planActive=document.getElementById('page-planning')?.classList.contains('active');
-  const listActive=document.getElementById('page-list')?.classList.contains('active');
-  const statsActive=document.getElementById('page-stats')?.classList.contains('active');
-  const clientsActive=document.getElementById('page-clients')?.classList.contains('active');
-  const fleetActive=document.getElementById('page-fleet')?.classList.contains('active');
-  if(planActive)buildTable();
-  if(listActive){populateListFilters();renderList();}
-  if(statsActive)renderStats();
-  if(clientsActive)renderClients();
-  if(fleetActive)renderFleet();
-  checkAlerts();
-}
 
 function mergeSettings(s){
   const out=JSON.parse(JSON.stringify(DEFAULT_SETTINGS));
@@ -198,9 +152,6 @@ function doLogin(){
 
 function doLogout(){
   if(!confirm("Esci dall'app?"))return;
-  // Disattivo tutti i listener real-time prima di uscire
-  _unsubscribers.forEach(u=>{try{u()}catch(_){}});
-  _unsubscribers=[];
   const{auth,signOut}=window._fb;
   signOut(auth).then(()=>{
     cars=[];rentals=[];clients=[];
@@ -444,7 +395,12 @@ function onMU(e){
 }
 document.addEventListener('mouseup',()=>{if(drag){clearHilite();drag=null;}});
 
-function onTouchStart(e){const td=e.currentTarget;drag={cid:td.dataset.cid,si:+td.dataset.di,ei:+td.dataset.di};hilite();}
+function onTouchStart(e){
+  // Se il dito parte sopra una barra esistente, apri l'edit invece di creare un nuovo noleggio
+  const bar=e.target&&e.target.closest?e.target.closest('.rbar'):null;
+  if(bar&&bar.dataset.rid){drag=null;openEditRental(bar.dataset.rid);return;}
+  const td=e.currentTarget;drag={cid:td.dataset.cid,si:+td.dataset.di,ei:+td.dataset.di};hilite();
+}
 function onTouchMove(e){if(!drag)return;e.preventDefault();const t=e.touches[0];const el=document.elementFromPoint(t.clientX,t.clientY);if(el&&el.dataset&&el.dataset.di&&el.dataset.cid===drag.cid){drag.ei=+el.dataset.di;hilite();}}
 function onTouchEnd(e){if(!drag)return;clearHilite();const si=Math.min(drag.si,drag.ei),ei=Math.max(drag.si,drag.ei);const cid=drag.cid;drag=null;openNewRental(cid,si,ei);}
 document.addEventListener('touchend',()=>{if(drag){clearHilite();drag=null;}});
