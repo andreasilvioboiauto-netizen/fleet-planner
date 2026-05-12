@@ -801,24 +801,27 @@ async function deleteCarEdit(){
 // SETTINGS
 // ---
 function loadSettings(){
-  const s=(id,v)=>{const el=document.getElementById(id);if(el)el.value=v||''};
-  s('set_agency',settings.agency);s('set_address',settings.address);s('set_phone',settings.phone);s('set_email',settings.email);s('set_piva',settings.piva);s('set_foro',settings.foro);s('set_clauses',settings.clauses);
-
-  // Carica stagioni
-  const _st=settings.stagioni||{alta:{from:'07-01',to:'08-31'},media:{from:'06-01',to:'06-30'}};
-  s('set_alta_from',_st.alta?.from||'07-01');s('set_alta_to',_st.alta?.to||'08-31');
-  s('set_media_from',_st.media?.from||'06-01');s('set_media_to',_st.media?.to||'06-30');
-  // Carica listino
-  const _li=settings.listino||{A:{alta:30,media:25,bassa:20},B:{alta:50,media:40,bassa:35},C:{alta:60,media:50,bassa:40},D:{alta:70,media:60,bassa:50},E:{alta:100,media:80,bassa:65}};
-  ['A','B','C','D','E'].forEach(cat=>{const lc=_li[cat]||{};const ge=id=>document.getElementById('lp_'+cat+'_'+id);if(ge('alta'))ge('alta').value=lc.alta||0;if(ge('media'))ge('media').value=lc.media||0;if(ge('bassa'))ge('bassa').value=lc.bassa||0;});
-
-  // Crea sezione listino se non presente nel DOM
-  const _pg = document.getElementById('page-settings');
-  if(_pg && !_pg.querySelector('.listino-block')){
-    const _listinoDiv = document.createElement('div'); _listinoDiv.className='listino-block';
-    _listinoDiv.innerHTML = '<div class="fsec" style="margin-top:20px"><div class="fsec-t">Stagioni (MM-DD)</div><div class="fg t3"><div class="ff"><label>Alta inizio</label><input type="text" id="set_alta_from" placeholder="07-01" maxlength="5"></div><div class="ff"><label>Alta fine</label><input type="text" id="set_alta_to" placeholder="08-31" maxlength="5"></div><div class="ff"><label>Media inizio</label><input type="text" id="set_media_from" placeholder="06-01" maxlength="5"></div><div class="ff"><label>Media fine</label><input type="text" id="set_media_to" placeholder="06-30" maxlength="5"></div></div></div><div class="fsec" style="margin-top:16px"><div class="fsec-t">Listino €/giorno (IVA inclusa)</div><table style="width:100%;border-collapse:collapse;font-size:13px;margin-top:8px"><thead><tr><th style="text-align:left;padding:5px 8px;color:var(--text3);font-weight:500;width:38%">Categoria</th><th style="text-align:center;padding:5px 8px;color:var(--text3);font-weight:500">Alta</th><th style="text-align:center;padding:5px 8px;color:var(--text3);font-weight:500">Media</th><th style="text-align:center;padding:5px 8px;color:var(--text3);font-weight:500">Bassa</th></tr></thead><tbody><tr><td style="padding:5px 8px;color:var(--text2)">A — Economica</td><td><input type="number" id="lp_A_alta" min="0" style="width:64px;text-align:right"></td><td><input type="number" id="lp_A_media" min="0" style="width:64px;text-align:right"></td><td><input type="number" id="lp_A_bassa" min="0" style="width:64px;text-align:right"></td></tr><tr><td style="padding:5px 8px;color:var(--text2)">B — Compatta</td><td><input type="number" id="lp_B_alta" min="0" style="width:64px;text-align:right"></td><td><input type="number" id="lp_B_media" min="0" style="width:64px;text-align:right"></td><td><input type="number" id="lp_B_bassa" min="0" style="width:64px;text-align:right"></td></tr><tr><td style="padding:5px 8px;color:var(--text2)">C — Berlina/Fam.</td><td><input type="number" id="lp_C_alta" min="0" style="width:64px;text-align:right"></td><td><input type="number" id="lp_C_media" min="0" style="width:64px;text-align:right"></td><td><input type="number" id="lp_C_bassa" min="0" style="width:64px;text-align:right"></td></tr><tr><td style="padding:5px 8px;color:var(--text2)">D — SUV/Crossover</td><td><input type="number" id="lp_D_alta" min="0" style="width:64px;text-align:right"></td><td><input type="number" id="lp_D_media" min="0" style="width:64px;text-align:right"></td><td><input type="number" id="lp_D_bassa" min="0" style="width:64px;text-align:right"></td></tr><tr><td style="padding:5px 8px;color:var(--text2)">E — Premium</td><td><input type="number" id="lp_E_alta" min="0" style="width:64px;text-align:right"></td><td><input type="number" id="lp_E_media" min="0" style="width:64px;text-align:right"></td><td><input type="number" id="lp_E_bassa" min="0" style="width:64px;text-align:right"></td></tr></tbody></table></div>';
-    const _settingsWrap = _pg.querySelector('.settings-wrap') || _pg;
-    _settingsWrap.appendChild(_listinoDiv);
+  const s=(id,v)=>{const e=document.getElementById(id);if(e)e.value=v||"";};
+  s("set_agency",settings.agency);s("set_address",settings.address);s("set_phone",settings.phone);
+  s("set_email",settings.email);s("set_piva",settings.piva);s("set_foro",settings.foro);s("set_clauses",settings.clauses);
+  const pg=document.getElementById("page-settings");
+  if(pg&&!pg.querySelector("#lp_A_alta")){
+    const wrap=pg.querySelector(".settings-wrap")||pg;
+    const div=document.createElement("div");
+    const st=settings.stagioni||{alta:{from:"07-01",to:"08-31"},media:{from:"06-01",to:"06-30"}};
+    const li=settings.listino||{A:{alta:30,media:25,bassa:20},B:{alta:50,media:40,bassa:35},C:{alta:60,media:50,bassa:40},D:{alta:70,media:60,bassa:50},E:{alta:100,media:80,bassa:65}};
+    const cats=[["A","Economica"],["B","Compatta"],["C","Berlina/Fam."],["D","SUV"],["E","Premium"]];
+    const stags=["alta","media","bassa"];
+    let rows=cats.map(([c,n])=>"<tr><td style=\"padding:5px 8px;color:var(--text2)\">"+c+" — "+n+"</td>"+stags.map(sg=>"<td style=\"text-align:center;padding:3px\"><input type=\"number\" id=\"lp_"+c+"_"+sg+"\" min=\"0\" value=\""+(li[c]&&li[c][sg]||0)+"\" style=\"width:60px;text-align:right;background:var(--navy);border:1px solid rgba(255,255,255,.15);border-radius:4px;color:var(--text);padding:3px 5px\"></td>").join("")+"</tr>").join("");
+    div.innerHTML="<div class=\"settings-section\" style=\"margin-top:16px\"><div class=\"settings-title\">&#128197; Stagioni (MM-DD)</div><div class=\"fg t3\" style=\"margin-top:8px\"><div class=\"ff\"><label>Alta inizio</label><input type=\"text\" id=\"set_alta_from\" placeholder=\"07-01\" maxlength=\"5\" value=\""+(st.alta&&st.alta.from||"07-01")+"\" style=\"font-family:DM Mono,monospace\"></div><div class=\"ff\"><label>Alta fine</label><input type=\"text\" id=\"set_alta_to\" placeholder=\"08-31\" maxlength=\"5\" value=\""+(st.alta&&st.alta.to||"08-31")+"\" style=\"font-family:DM Mono,monospace\"></div><div class=\"ff\"><label>Media inizio</label><input type=\"text\" id=\"set_media_from\" placeholder=\"06-01\" maxlength=\"5\" value=\""+(st.media&&st.media.from||"06-01")+"\" style=\"font-family:DM Mono,monospace\"></div><div class=\"ff\"><label>Media fine</label><input type=\"text\" id=\"set_media_to\" placeholder=\"06-30\" maxlength=\"5\" value=\""+(st.media&&st.media.to||"06-30")+"\" style=\"font-family:DM Mono,monospace\"></div></div></div><div class=\"settings-section\" style=\"margin-top:16px\"><div class=\"settings-title\">&#128176; Listino &euro;/giorno (IVA inclusa)</div><table style=\"width:100%;border-collapse:collapse;font-size:13px;margin-top:8px\"><thead><tr><th style=\"text-align:left;padding:5px 8px;color:var(--text3);font-weight:500;width:38%\">Categoria</th><th style=\"text-align:center;padding:5px 8px;color:var(--text3);font-weight:500\">Alta</th><th style=\"text-align:center;padding:5px 8px;color:var(--text3);font-weight:500\">Media</th><th style=\"text-align:center;padding:5px 8px;color:var(--text3);font-weight:500\">Bassa</th></tr></thead><tbody>"+rows+"</tbody></table></div>";
+    wrap.appendChild(div);
+  } else if(pg) {
+    const st2=settings.stagioni||{alta:{from:"07-01",to:"08-31"},media:{from:"06-01",to:"06-30"}};
+    const li2=settings.listino||{};
+    const sv2=(id,v)=>{const e=document.getElementById(id);if(e)e.value=v||"";};
+    sv2("set_alta_from",st2.alta&&st2.alta.from||"07-01");sv2("set_alta_to",st2.alta&&st2.alta.to||"08-31");
+    sv2("set_media_from",st2.media&&st2.media.from||"06-01");sv2("set_media_to",st2.media&&st2.media.to||"06-30");
+    ["A","B","C","D","E"].forEach(c=>{["alta","media","bassa"].forEach(sg=>{const e=document.getElementById("lp_"+c+"_"+sg);if(e)e.value=li2[c]&&li2[c][sg]||0;});});
   }
 }
 function saveSettings(){
