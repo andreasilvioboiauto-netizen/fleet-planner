@@ -91,7 +91,7 @@ async function fbLoadAll(){
     showSync('Sincronizzato');
     DAYS=getDays(curYear);
     document.getElementById('yearVal').textContent=curYear;
-    document.getElementById('agencyName').textContent=settings.agency||'Fleet Planner';
+    document.getElementById('agencyName').textContent=settings.agency||'fleet-planner-silvioboiautosrl';
     document.getElementById('logoutBtn').style.display='flex';
     document.getElementById('syncIndicator').style.display='flex';
     buildTable();
@@ -1037,7 +1037,7 @@ function saveSettings(){
   });
   settings.listino=newL;
   fbSet('meta','settings',settings);
-  document.getElementById('agencyName').textContent=settings.agency||'Fleet Planner';
+  document.getElementById('agencyName').textContent=settings.agency||'fleet-planner-silvioboiautosrl';
 }
 
 // ---
@@ -1113,7 +1113,7 @@ function exportMonthPDF(){
     +'table{width:100%;border-collapse:collapse;margin-top:16px}th{background:#111;color:#fff;padding:6px 8px;text-align:left}'
     +'td{padding:5px 8px;border-bottom:1px solid #eee}tfoot td{font-weight:bold;border-top:2px solid #111}'
     +'@media print{button{display:none}}</style></head><body>'
-    +'<h2>'+(settings.agency||'Fleet Planner')+' — Riepilogo '+mNames[month]+' '+curYear+'</h2>'
+    +'<h2>'+(settings.agency||'fleet-planner-silvioboiautosrl')+' — Riepilogo '+mNames[month]+' '+curYear+'</h2>'
     +'<p>'+(settings.address||'')+(settings.piva?' | P.IVA '+settings.piva:'')+'</p>'
     +'<table><thead><tr><th>Cliente</th><th>Targa</th><th>Cat.</th><th>Inizio</th><th>Fine</th><th>GG</th><th>Totale</th></tr></thead>'
     +'<tbody>'+rows+'</tbody>'
