@@ -91,7 +91,7 @@ async function fbLoadAll(){
     showSync('Sincronizzato');
     DAYS=getDays(curYear);
     document.getElementById('yearVal').textContent=curYear;
-    document.getElementById('agencyName').textContent=settings.agency||'fleet-planner-silvioboiautosrl';
+    document.getElementById('agencyName').textContent=settings.agency||'Fleet Planner';
     document.getElementById('logoutBtn').style.display='flex';
     document.getElementById('syncIndicator').style.display='flex';
     buildTable();
@@ -448,6 +448,9 @@ function openNewRental(cid,si,ei){
   // Suggerimento prezzo automatico in base a categoria auto + stagione
   applyPrezzoSuggerito(car,dk(DAYS[si]));
 
+  // Nessun audit per nuovo noleggio
+  renderAuditLine(null);
+
   selColor=car.color||RCOLS[rentals.length%RCOLS.length];
   buildColorPick('colorPick',RCOLS,selColor,c=>selColor=c);
   document.getElementById('mRental').classList.add('open');
@@ -501,6 +504,7 @@ function openEditRental(rid){
   document.getElementById('btnDel').style.display='flex';
   document.getElementById('clientLookup').value='';
   document.getElementById('clientSuggest').innerHTML='';
+  renderAuditLine(r);
   document.getElementById('mRental').classList.add('open');
 }
 
@@ -558,6 +562,80 @@ function checkConflict(cid,si,ei,xid){
 
 function gv(id){const el=document.getElementById(id);return el?el.value.trim():''}
 
+// === AUDIT / HISTORY ===
+const FIELD_LABELS={
+  startKey:'Data inizio',endKey:'Data fine',carId:'Auto',
+  stato:'Stato',payStatus:'Stato pagamento',
+  km:'KM consegna',kmR:'KM restituzione',fuel:'Carburante cons.',clean:'Pulizia cons.',
+  tipo:'Tipo cliente',cognome:'Cognome',nome:'Nome',cf:'C.F./P.IVA',
+  indirizzo:'Indirizzo',tel:'Telefono',email:'Email',
+  pat:'N° Patente',patR:'Patente rilascio',patS:'Patente scadenza',
+  aCog:'Cond. agg. Cognome',aNom:'Cond. agg. Nome',aPat:'Cond. agg. Patente',aSca:'Cond. agg. Scadenza',
+  prezzo:'Prezzo/gg',sp:'Sconto %',se:'Sconto €',cau:'Cauzione',
+  acconto:'Acconto',pag:'Metodo pagamento',pen:'Penale',
+  totale:'Totale',saldo:'Saldo',
+  dCarr:'Danni carr. cons.',dVetri:'Danni vetri cons.',dInt:'Danni int. cons.',dCer:'Danni cerchi cons.',dNote:'Note danni cons.',
+  rCarr:'Carr. resa',rVetri:'Vetri resi',rFuel:'Carb. reso',rClean:'Pulizia resa',rNote:'Note resa',
+  note:'Note',color:'Colore barra'
+};
+
+function diffRental(oldR,newR){
+  const out=[];
+  Object.keys(FIELD_LABELS).forEach(k=>{
+    const a=oldR[k]==null?'':String(oldR[k]);
+    const b=newR[k]==null?'':String(newR[k]);
+    if(a!==b) out.push({field:k,label:FIELD_LABELS[k],from:a,to:b});
+  });
+  return out;
+}
+
+function fmtHistoryDateTime(iso){
+  if(!iso)return'—';
+  try{
+    const d=new Date(iso);
+    return `${p2(d.getDate())}/${p2(d.getMonth()+1)}/${d.getFullYear()} ${p2(d.getHours())}:${p2(d.getMinutes())}`;
+  }catch(_){return iso}
+}
+
+function renderAuditLine(r){
+  const el=document.getElementById('auditLine');
+  if(!el)return;
+  if(!r||!r.createdBy){el.innerHTML='';el.style.display='none';return}
+  const createdTxt=`Creato da <strong>${r.createdBy}</strong> il ${fmtHistoryDateTime(r.createdAt)}`;
+  const updatedTxt=(r.updatedBy && r.updatedAt && r.updatedAt!==r.createdAt)
+    ? ` · Modificato da <strong>${r.updatedBy}</strong> il ${fmtHistoryDateTime(r.updatedAt)}`
+    : '';
+  const histCount=(r.history||[]).length;
+  const histBtn=histCount?`<a href="javascript:void(0)" onclick="showHistory()" style="color:var(--accent);margin-left:8px;font-size:11px;text-decoration:underline">Storico (${histCount})</a>`:'';
+  el.innerHTML=createdTxt+updatedTxt+histBtn;
+  el.style.display='block';
+}
+
+function showHistory(){
+  if(!curRid)return;
+  const r=rentals.find(x=>x.id===curRid);
+  if(!r||!r.history||!r.history.length){toast('Nessuno storico disponibile');return}
+  const items=[...r.history].reverse().map(h=>{
+    const head=`<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+      <div><strong style="color:var(--accent)">${h.action==='create'?'CREATO':'MODIFICATO'}</strong> da <strong>${h.user}</strong></div>
+      <div style="font-size:11px;color:var(--text3);font-family:DM Mono,monospace">${fmtHistoryDateTime(h.at)}</div>
+    </div>`;
+    let body='';
+    if(h.action==='create'){
+      body='<div style="font-size:11px;color:var(--text3);font-style:italic">Noleggio creato</div>';
+    } else if(h.changes && h.changes.length){
+      body='<div style="display:flex;flex-direction:column;gap:3px;font-size:11px">'
+        +h.changes.map(c=>`<div><span style="color:var(--text2)">${c.label}:</span> <span style="color:#fca5a5;text-decoration:line-through">${c.from||'—'}</span> <span style="color:var(--text3)">→</span> <span style="color:#6ee7b7">${c.to||'—'}</span></div>`).join('')
+        +'</div>';
+    } else {
+      body='<div style="font-size:11px;color:var(--text3);font-style:italic">Nessuna modifica registrata</div>';
+    }
+    return `<div style="background:var(--navy);border:1px solid var(--border);border-radius:7px;padding:10px 12px;margin-bottom:8px">${head}${body}</div>`;
+  }).join('');
+  document.getElementById('histBody').innerHTML=items;
+  document.getElementById('mHistory').classList.add('open');
+}
+
 function saveRental(){
   const _sk=document.getElementById('dStart')?.value||dk(DAYS[curSi]);
   const _ek=document.getElementById('dEnd')?.value||dk(DAYS[curEi]);
@@ -571,9 +649,15 @@ function saveRental(){
   const acconto=parseFloat(gv('f_acconto'))||0;
   const pen=parseFloat(gv('f_pen'))||0;
   const saldo=tot+pen-acconto;
+
+  // === Tracking utente ===
+  const userEmail = window._fbUser?.email || '?';
+  const nowIso = new Date().toISOString();
+  const prev = curRid ? rentals.find(x=>x.id===curRid) : null;
+
   const r={
     id:curRid||'r'+Date.now(),
-    ctrNum:curRid?(rentals.find(x=>x.id===curRid)?.ctrNum||ctrCounter):ctrCounter,
+    ctrNum:curRid?(prev?.ctrNum||ctrCounter):ctrCounter,
     carId:curCid,
     startKey:dk(DAYS[curSi]), endKey:dk(DAYS[curEi]),
     color:selColor, stato:gv('f_stato'), payStatus:gv('f_pay_status'),
@@ -590,7 +674,24 @@ function saveRental(){
     dCarr:gv('f_d_carr'), dVetri:gv('f_d_vetri'), dInt:gv('f_d_int'), dCer:gv('f_d_cer'), dNote:gv('f_d_note'),
     rCarr:gv('f_r_carr'), rVetri:gv('f_r_vetri'), rFuel:gv('f_r_fuel'), rClean:gv('f_r_clean'), rNote:gv('f_r_note'),
     note:gv('f_note'),
+    // Audit fields
+    createdBy: prev?.createdBy || userEmail,
+    createdAt: prev?.createdAt || nowIso,
+    updatedBy: userEmail,
+    updatedAt: nowIso,
+    history: prev?.history ? [...prev.history] : [],
   };
+
+  // Calcolo modifiche rispetto a versione precedente per lo storico
+  if(!prev){
+    r.history.push({user:userEmail,at:nowIso,action:'create',changes:[]});
+  } else {
+    const changes = diffRental(prev,r);
+    if(changes.length){
+      r.history.push({user:userEmail,at:nowIso,action:'edit',changes});
+    }
+  }
+
   if(!curRid){ctrCounter++; fbSet('meta','ctr',{value:ctrCounter});}
   if(curRid){const i=rentals.findIndex(x=>x.id===curRid);if(i>=0)rentals[i]=r;}
   else rentals.push(r);
@@ -762,6 +863,7 @@ function renderList(){
     else if(listSortKey==='giorni'){const siA=dIdx(a.startKey),eiA=dIdx(a.endKey),siB=dIdx(b.startKey),eiB=dIdx(b.endKey);va=siA>=0&&eiA>=0?eiA-siA:0;vb=siB>=0&&eiB>=0?eiB-siB:0}
     else if(listSortKey==='totale'){va=parseFloat(a.totale)||0;vb=parseFloat(b.totale)||0}
     else if(listSortKey==='ctr'){va=a.ctrNum||0;vb=b.ctrNum||0}
+    else if(listSortKey==='inserito'){va=a.createdBy||'';vb=b.createdBy||''}
     else{va=a.startKey||'';vb=b.startKey||''}
     if(va<vb)return -1*listSortDir; if(va>vb)return 1*listSortDir; return 0;
   });
@@ -775,8 +877,12 @@ function renderList(){
     const tot=parseFloat(r.totale)||0; if(tot)totalRev+=tot;
     const payS=r.payStatus||'nonpagato';
     const ctrStr=r.ctrNum?`CTR-${(r.startKey||'').split('-')[0]||curYear}-${p2(r.ctrNum)}`:'—';
+    // Inserito da: mostro la parte prima della @ per compattezza, full email in tooltip
+    const cb=r.createdBy||'';
+    const cbShort=cb?cb.split('@')[0]:'—';
+    const cbCell=`<td style="font-size:11px;color:var(--text2)" title="${cb}${r.createdAt?' · '+fmtHistoryDateTime(r.createdAt):''}">${cbShort}</td>`;
     const tr=document.createElement('tr');
-    tr.innerHTML=`<td style="font-family:'DM Mono',monospace;font-size:10px;color:var(--text3)">${ctrStr}</td><td><strong>${r.cognome||'—'}</strong> ${r.nome||''}<br><span style="font-size:10px;color:var(--text3)">${r.cf||''}</span></td><td style="font-family:'DM Mono',monospace;font-size:10px;color:var(--accent)">${car?car.targa:'—'}</td><td>${fd(r.startKey)}</td><td>${fd(r.endKey)}</td><td>${days}</td><td style="font-family:'DM Mono',monospace">${tot?`€ ${tot.toFixed(0)}`:'—'}</td><td><span class="badge ${payS}">${payS}</span></td><td><span class="badge ${r.stato||'noleggio'}">${r.stato||'noleggio'}</span></td><td style="color:var(--text3);font-size:11px;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${r.note||''}</td>`;
+    tr.innerHTML=`<td style="font-family:'DM Mono',monospace;font-size:10px;color:var(--text3)">${ctrStr}</td><td><strong>${r.cognome||'—'}</strong> ${r.nome||''}<br><span style="font-size:10px;color:var(--text3)">${r.cf||''}</span></td><td style="font-family:'DM Mono',monospace;font-size:10px;color:var(--accent)">${car?car.targa:'—'}</td><td>${fd(r.startKey)}</td><td>${fd(r.endKey)}</td><td>${days}</td><td style="font-family:'DM Mono',monospace">${tot?`€ ${tot.toFixed(0)}`:'—'}</td><td><span class="badge ${payS}">${payS}</span></td><td><span class="badge ${r.stato||'noleggio'}">${r.stato||'noleggio'}</span></td>${cbCell}<td style="color:var(--text3);font-size:11px;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${r.note||''}</td>`;
     tr.onclick=()=>openEditRental(r.id);
     tbody.appendChild(tr);
   });
@@ -1037,7 +1143,7 @@ function saveSettings(){
   });
   settings.listino=newL;
   fbSet('meta','settings',settings);
-  document.getElementById('agencyName').textContent=settings.agency||'fleet-planner-silvioboiautosrl';
+  document.getElementById('agencyName').textContent=settings.agency||'Fleet Planner';
 }
 
 // ---
@@ -1113,7 +1219,7 @@ function exportMonthPDF(){
     +'table{width:100%;border-collapse:collapse;margin-top:16px}th{background:#111;color:#fff;padding:6px 8px;text-align:left}'
     +'td{padding:5px 8px;border-bottom:1px solid #eee}tfoot td{font-weight:bold;border-top:2px solid #111}'
     +'@media print{button{display:none}}</style></head><body>'
-    +'<h2>'+(settings.agency||'fleet-planner-silvioboiautosrl')+' — Riepilogo '+mNames[month]+' '+curYear+'</h2>'
+    +'<h2>'+(settings.agency||'Fleet Planner')+' — Riepilogo '+mNames[month]+' '+curYear+'</h2>'
     +'<p>'+(settings.address||'')+(settings.piva?' | P.IVA '+settings.piva:'')+'</p>'
     +'<table><thead><tr><th>Cliente</th><th>Targa</th><th>Cat.</th><th>Inizio</th><th>Fine</th><th>GG</th><th>Totale</th></tr></thead>'
     +'<tbody>'+rows+'</tbody>'

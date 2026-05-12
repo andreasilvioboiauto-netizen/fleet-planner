@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>fleet-planner-silvioboiautosrl</title>
+<title>Fleet Planner</title>
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,wght@0,300;0,400;0,500;0,600;1,400&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
 <!-- Firebase SDK -->
 <script type="module" src="firebase-init.js"></script>
@@ -260,7 +260,7 @@ header{padding:6px 10px;gap:6px}
 <!-- LOGIN SCREEN -->
 <div id="loginScreen">
 <div class="login-box">
-<div class="login-logo"><div class="login-logo-dot"></div>fleet-planner-silvioboiautosrl</div>
+<div class="login-logo"><div class="login-logo-dot"></div>Fleet Planner</div>
 <div class="login-sub">Accedi per sincronizzare i dati su tutti i dispositivi</div>
 <div class="login-err" id="loginErr"></div>
 <div class="login-lbl">Email</div>
@@ -275,7 +275,7 @@ header{padding:6px 10px;gap:6px}
 <div id="appShell" style="display:none;flex-direction:column;height:var(--app-h);min-height:0">
 <div class="shell">
 <header>
-<div class="logo"><div class="logo-dot"></div><span id="agencyName">fleet-planner-silvioboiautosrl</span></div>
+<div class="logo"><div class="logo-dot"></div><span id="agencyName">Fleet Planner</span></div>
 <div class="year-nav">
 <button onclick="changeYear(-1)">‹</button>
 <div class="year-val" id="yearVal">2025</div>
@@ -362,6 +362,7 @@ header{padding:6px 10px;gap:6px}
 <th onclick="sortList('totale')">Totale</th>
 <th>Pagamento</th>
 <th>Stato</th>
+<th onclick="sortList('inserito')">Inserito da</th>
 <th>Note</th>
 </tr></thead>
 <tbody id="listBody"></tbody>
@@ -464,6 +465,7 @@ header{padding:6px 10px;gap:6px}
 <button class="mclose" onclick="closeM('mRental')">✕</button>
 </div>
 <div class="mbody">
+<div id="auditLine" style="display:none;background:var(--navy);border:1px solid var(--border);border-radius:6px;padding:7px 11px;font-size:11px;color:var(--text2);margin-bottom:10px"></div>
 <div class="conflict" id="conflictWarn">⚠️ Le date si sovrappongono con un noleggio esistente.</div>
 
 <div class="fsec">
@@ -604,6 +606,17 @@ header{padding:6px 10px;gap:6px}
 <button class="btn btn-ghost" onclick="closeM('mRental')">Annulla</button>
 <button class="btn btn-teal" onclick="printContract()">🖨 Contratto</button>
 <button class="btn btn-accent" onclick="saveRental()">✓ Salva</button>
+</div>
+</div>
+</div>
+
+<!-- ══ MODAL STORICO ══ -->
+<div class="overlay" id="mHistory">
+<div class="modal sm">
+<div class="mhd"><div><div class="mtitle">Storico modifiche</div><div class="msub">Cronologia delle modifiche al noleggio</div></div><button class="mclose" onclick="closeM('mHistory')">✕</button></div>
+<div class="mbody" id="histBody" style="max-height:60vh;overflow-y:auto"></div>
+<div class="mfoot">
+<button class="btn btn-ghost" onclick="closeM('mHistory')">Chiudi</button>
 </div>
 </div>
 </div>
