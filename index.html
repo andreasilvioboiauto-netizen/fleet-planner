@@ -385,9 +385,7 @@ header{background:var(--surf);border-bottom:1px solid var(--border);height:52px;
   <div class="list-bar">
     <div class="spacer" style="flex:1"></div>
     
-    <div class="fsec" style="margin-top:20px"><div class="fsec-t">Stagioni — date inizio/fine (formato MM-DD)</div><div class="fg t3" style="gap:8px 16px"><div class="ff"><label>Alta inizio</label><input type="text" id="set_alta_from" placeholder="07-01" maxlength="5"></div><div class="ff"><label>Alta fine</label><input type="text" id="set_alta_to" placeholder="08-31" maxlength="5"></div><div class="ff"><label>Media inizio</label><input type="text" id="set_media_from" placeholder="06-01" maxlength="5"></div><div class="ff"><label>Media fine</label><input type="text" id="set_media_to" placeholder="06-30" maxlength="5"></div></div></div><div class="fsec" style="margin-top:16px"><div class="fsec-t">Listino prezzi &euro;/giorno (IVA inclusa) per categoria e stagione</div><table style="width:100%;border-collapse:collapse;margin-top:10px;font-size:13px"><thead><tr><th style="text-align:left;padding:6px 10px;color:var(--text3);font-weight:500;width:38%">Categoria</th><th style="text-align:center;padding:6px 10px;color:var(--text3);font-weight:500">Alta</th><th style="text-align:center;padding:6px 10px;color:var(--text3);font-weight:500">Media</th><th style="text-align:center;padding:6px 10px;color:var(--text3);font-weight:500">Bassa</th></tr></thead><tbody><tr><td style="padding:5px 10px;color:var(--text2)">A &mdash; Economica</td><td style="text-align:center;padding:4px"><input type="number" id="lp_A_alta" min="0" style="width:64px;text-align:right"></td><td style="text-align:center;padding:4px"><input type="number" id="lp_A_media" min="0" style="width:64px;text-align:right"></td><td style="text-align:center;padding:4px"><input type="number" id="lp_A_bassa" min="0" style="width:64px;text-align:right"></td></tr><tr><td style="padding:5px 10px;color:var(--text2)">B &mdash; Compatta</td><td style="text-align:center;padding:4px"><input type="number" id="lp_B_alta" min="0" style="width:64px;text-align:right"></td><td style="text-align:center;padding:4px"><input type="number" id="lp_B_media" min="0" style="width:64px;text-align:right"></td><td style="text-align:center;padding:4px"><input type="number" id="lp_B_bassa" min="0" style="width:64px;text-align:right"></td></tr><tr><td style="padding:5px 10px;color:var(--text2)">C &mdash; Berlina/Familiare</td><td style="text-align:center;padding:4px"><input type="number" id="lp_C_alta" min="0" style="width:64px;text-align:right"></td><td style="text-align:center;padding:4px"><input type="number" id="lp_C_media" min="0" style="width:64px;text-align:right"></td><td style="text-align:center;padding:4px"><input type="number" id="lp_C_bassa" min="0" style="width:64px;text-align:right"></td></tr><tr><td style="padding:5px 10px;color:var(--text2)">D &mdash; SUV/Crossover</td><td style="text-align:center;padding:4px"><input type="number" id="lp_D_alta" min="0" style="width:64px;text-align:right"></td><td style="text-align:center;padding:4px"><input type="number" id="lp_D_media" min="0" style="width:64px;text-align:right"></td><td style="text-align:center;padding:4px"><input type="number" id="lp_D_bassa" min="0" style="width:64px;text-align:right"></td></tr><tr><td style="padding:5px 10px;color:var(--text2)">E &mdash; Premium</td><td style="text-align:center;padding:4px"><input type="number" id="lp_E_alta" min="0" style="width:64px;text-align:right"></td><td style="text-align:center;padding:4px"><input type="number" id="lp_E_media" min="0" style="width:64px;text-align:right"></td><td style="text-align:center;padding:4px"><input type="number" id="lp_E_bassa" min="0" style="width:64px;text-align:right"></td></tr></tbody></table></div>
-    <button class="hbtn accent" onclick="openCarEditModal(null)">+ Aggiungi Auto</button>
-  </div>
+    <div class="ff"><label>Alta fine</label><input type="text" id="set_alta_to" placeholder="08-31" maxlength="5"></div><div class="ff"><label>Media inizio</label><input type="text" id="set_media_from" placeholder="06-01" maxlength="5"></div><div class="ff"><label>Media fine</label><input type="text" id="set_media_to" placeholder="06-30" maxlength="5"></div></div></div>
   <div class="fleet-wrap">
     <div class="fleet-grid" id="fleetGrid"></div>
   </div>
@@ -566,7 +564,35 @@ header{background:var(--surf);border-bottom:1px solid var(--border);height:52px;
     <button class="btn btn-teal" onclick="printContract()">🖨 Contratto</button>
     <button class="btn btn-accent" onclick="saveRental()">✓ Salva</button>
   </div>
-</div>
+
+    <div class="fsec" style="margin-top:20px">
+      <div class="fsec-t">Stagioni — date inizio/fine (MM-DD)</div>
+      <div class="fg t3">
+        <div class="ff"><label>Alta inizio</label><input type="text" id="set_alta_from" placeholder="07-01" maxlength="5"></div>
+        <div class="ff"><label>Alta fine</label><input type="text" id="set_alta_to" placeholder="08-31" maxlength="5"></div>
+        <div class="ff"><label>Media inizio</label><input type="text" id="set_media_from" placeholder="06-01" maxlength="5"></div>
+        <div class="ff"><label>Media fine</label><input type="text" id="set_media_to" placeholder="06-30" maxlength="5"></div>
+      </div>
+    </div>
+    <div class="fsec" style="margin-top:16px">
+      <div class="fsec-t">Listino prezzi &euro;/giorno (IVA inclusa)</div>
+      <table style="width:100%;border-collapse:collapse;margin-top:10px;font-size:13px">
+        <thead><tr>
+          <th style="text-align:left;padding:6px 10px;color:var(--text3);font-weight:500;width:38%">Categoria</th>
+          <th style="text-align:center;padding:6px;color:var(--text3);font-weight:500">Alta</th>
+          <th style="text-align:center;padding:6px;color:var(--text3);font-weight:500">Media</th>
+          <th style="text-align:center;padding:6px;color:var(--text3);font-weight:500">Bassa</th>
+        </tr></thead>
+        <tbody>
+          <tr><td style="padding:5px 10px;color:var(--text2)">A &mdash; Economica</td><td><input type="number" id="lp_A_alta" min="0" style="width:64px;text-align:right"></td><td><input type="number" id="lp_A_media" min="0" style="width:64px;text-align:right"></td><td><input type="number" id="lp_A_bassa" min="0" style="width:64px;text-align:right"></td></tr>
+          <tr><td style="padding:5px 10px;color:var(--text2)">B &mdash; Compatta</td><td><input type="number" id="lp_B_alta" min="0" style="width:64px;text-align:right"></td><td><input type="number" id="lp_B_media" min="0" style="width:64px;text-align:right"></td><td><input type="number" id="lp_B_bassa" min="0" style="width:64px;text-align:right"></td></tr>
+          <tr><td style="padding:5px 10px;color:var(--text2)">C &mdash; Berlina/Familiare</td><td><input type="number" id="lp_C_alta" min="0" style="width:64px;text-align:right"></td><td><input type="number" id="lp_C_media" min="0" style="width:64px;text-align:right"></td><td><input type="number" id="lp_C_bassa" min="0" style="width:64px;text-align:right"></td></tr>
+          <tr><td style="padding:5px 10px;color:var(--text2)">D &mdash; SUV/Crossover</td><td><input type="number" id="lp_D_alta" min="0" style="width:64px;text-align:right"></td><td><input type="number" id="lp_D_media" min="0" style="width:64px;text-align:right"></td><td><input type="number" id="lp_D_bassa" min="0" style="width:64px;text-align:right"></td></tr>
+          <tr><td style="padding:5px 10px;color:var(--text2)">E &mdash; Premium</td><td><input type="number" id="lp_E_alta" min="0" style="width:64px;text-align:right"></td><td><input type="number" id="lp_E_media" min="0" style="width:64px;text-align:right"></td><td><input type="number" id="lp_E_bassa" min="0" style="width:64px;text-align:right"></td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
 </div>
 
 <!-- ══ MODAL AUTO EDIT ══ -->
