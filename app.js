@@ -1,6 +1,8 @@
 // ---
 // CONSTANTS AND STATE
 // ---
+// ID azienda: tutti gli utenti autenticati condividono questi dati
+const COMPANY_ID='silvio-boi-auto';
 const MONTHS=['Gennaio','Febbraio','Marzo','Aprile','Maggio','Giugno','Luglio','Agosto','Settembre','Ottobre','Novembre','Dicembre'];
 const RCOLS=['#2563eb','#0891b2','#059669','#d97706','#dc2626','#7c3aed','#db2777','#0d9488','#65a30d','#ea580c','#4f46e5','#0284c7','#16a34a','#ca8a04','#b91c1c'];
 const CATEGORIES=[['A','Economica'],['B','Compatta'],['C','Berlina/Familiare'],['D','SUV'],['E','Premium']];
@@ -26,17 +28,21 @@ let curRid=null, curCid=null, curSi=null, curEi=null;
 let curClientId=null, curCarEditId=null, selCarColor=RCOLS[0];
 
 // ---
-// FIREBASE STORAGE
+// FIREBASE STORAGE — dati condivisi tra tutti gli utenti dell'azienda
 // ---
 function uid(){return window._fbUser?window._fbUser.uid:null}
 
-async function fbSet(collection, id, data){
+// Tutti i path puntano a aziende/{COMPANY_ID}/... invece di users/{uid}/...
+// Le regole di sicurezza Firestore richiedono request.auth != null
+async function fbSet(coll, id, data){
   if(!uid())return;
   try{
     const{db,doc,setDoc}=window._fb;
-    await setDoc(doc(db,'users',uid(),collection,id),data);
-    if(['cars','rentals','clients'].includes(collection)){
-      try{localStorage.setItem('fp_'+collection+'_'+uid(),JSON.stringify(collection==='cars'?cars:collection==='rentals'?rentals:clients));}catch(_){}
+    // Aggiungo metadati di tracciabilità (utile in futuro per audit "chi ha modificato")
+    const payload={...data, _updatedBy:uid(), _updatedAt:Date.now()};
+    await setDoc(doc(db,'aziende',COMPANY_ID,coll,id),payload);
+    if(['cars','rentals','clients'].includes(coll)){
+      try{localStorage.setItem('fp_'+coll+'_'+COMPANY_ID,JSON.stringify(coll==='cars'?cars:coll==='rentals'?rentals:clients));}catch(_){}
     }
   }catch(e){
     console.error('fbSet error',e);
@@ -44,51 +50,75 @@ async function fbSet(collection, id, data){
   }
 }
 
-async function fbGetAll(col){
-  if(!uid())return[];
-  try{
-    const{db,collection:col_,getDocs}=window._fb;
-    const snap=await getDocs(col_(db,'users',uid(),col));
-    return snap.docs.map(d=>d.data());
-  }catch(e){console.error('fbGetAll error',e);return[]}
-}
-
-async function fbDelete(col,id){
+async function fbDelete(coll,id){
   if(!uid())return;
   try{
     const{db}=window._fb;
     const{deleteDoc,doc}=await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js');
-    await deleteDoc(doc(db,'users',uid(),col,id));
+    await deleteDoc(doc(db,'aziende',COMPANY_ID,coll,id));
   }catch(e){console.error('fbDelete error',e)}
 }
 
-// Carica tutto da Firebase
+// Listener real-time attivi (per cleanup al logout)
+let _unsubscribers=[];
+
+// Carica tutto da Firestore con listener real-time attivi.
+// Ogni modifica fatta da QUALSIASI dispositivo si propaga automaticamente.
 async function fbLoadAll(){
-  showSync('Caricamento...');
+  showSync('Connessione...');
+  // Pulisco listener precedenti se esistono (es. dopo cambio utente)
+  _unsubscribers.forEach(u=>{try{u()}catch(_){}});
+  _unsubscribers=[];
+
+  // 1) Carico la cache locale subito per evitare schermo vuoto durante la prima connessione
   try{
-    const [carsData, rentalsData, clientsData] = await Promise.all([
-      fbGetAll('cars'), fbGetAll('rentals'), fbGetAll('clients')
-    ]);
-    const{db,doc,getDoc}=window._fb;
-    const settingsSnap = await getDoc(doc(db,'users',uid(),'meta','settings'));
-    const ctrSnap = await getDoc(doc(db,'users',uid(),'meta','ctr'));
+    const cC=localStorage.getItem('fp_cars_'+COMPANY_ID);
+    const cR=localStorage.getItem('fp_rentals_'+COMPANY_ID);
+    const cL=localStorage.getItem('fp_clients_'+COMPANY_ID);
+    if(cC)cars=JSON.parse(cC);
+    if(cR)rentals=JSON.parse(cR);
+    if(cL)clients=JSON.parse(cL);
+  }catch(_){}
 
-    if(carsData.length){cars=carsData;try{localStorage.setItem('fp_cars_'+uid(),JSON.stringify(cars));}catch(_){}}
-    else{const _lsC=localStorage.getItem('fp_cars_'+uid());cars=_lsC?JSON.parse(_lsC):[];}
+  try{
+    const{db,doc,getDoc,collection:col_,onSnapshot}=window._fb;
 
-    if(rentalsData.length){rentals=rentalsData;try{localStorage.setItem('fp_rentals_'+uid(),JSON.stringify(rentals));}catch(_){}}
-    else{const _lsR=localStorage.getItem('fp_rentals_'+uid());rentals=_lsR?JSON.parse(_lsR):[];}
+    // 2) Carico i settings + counter contratti (one-shot, non cambiano spesso)
+    const settingsSnap=await getDoc(doc(db,'aziende',COMPANY_ID,'meta','settings'));
+    const ctrSnap=await getDoc(doc(db,'aziende',COMPANY_ID,'meta','ctr'));
+    const loaded=settingsSnap.exists()?settingsSnap.data():{};
+    settings=mergeSettings(loaded);
+    ctrCounter=ctrSnap.exists()?(ctrSnap.data().value||1):1;
 
-    if(clientsData.length){clients=clientsData;try{localStorage.setItem('fp_clients_'+uid(),JSON.stringify(clients));}catch(_){}}
-    else{const _lsC2=localStorage.getItem('fp_clients_'+uid());clients=_lsC2?JSON.parse(_lsC2):[];}
+    // 3) Attivo listener real-time su cars, rentals, clients
+    const subscribe=(name, target)=>{
+      const unsub=onSnapshot(col_(db,'aziende',COMPANY_ID,name),snap=>{
+        const arr=snap.docs.map(d=>{const x=d.data();delete x._updatedBy;delete x._updatedAt;return x});
+        if(name==='cars'){cars=arr;}
+        else if(name==='rentals'){rentals=arr;}
+        else if(name==='clients'){clients=arr;}
+        try{localStorage.setItem('fp_'+name+'_'+COMPANY_ID,JSON.stringify(arr));}catch(_){}
+        // Refresh delle UI attive (solo della pagina visibile, per non perdere stato dei form aperti)
+        refreshActivePage();
+        showSync('Sincronizzato');
+      },err=>{
+        console.error('onSnapshot '+name+' error',err);
+        showSync('Errore sync','err');
+      });
+      _unsubscribers.push(unsub);
+    };
+    subscribe('cars');
+    subscribe('rentals');
+    subscribe('clients');
 
-    // Merge settings con default per garantire stagioni/listino presenti
-    const loaded = settingsSnap.exists()?settingsSnap.data():{};
-    settings = mergeSettings(loaded);
+    // Listener anche su settings e counter (così Michele vede le tariffe aggiornate se le cambi tu)
+    _unsubscribers.push(onSnapshot(doc(db,'aziende',COMPANY_ID,'meta','settings'),s=>{
+      if(s.exists()){settings=mergeSettings(s.data());document.getElementById('agencyName').textContent=settings.agency||'Fleet Planner';}
+    }));
+    _unsubscribers.push(onSnapshot(doc(db,'aziende',COMPANY_ID,'meta','ctr'),s=>{
+      if(s.exists())ctrCounter=s.data().value||1;
+    }));
 
-    ctrCounter = ctrSnap.exists()?(ctrSnap.data().value||1):1;
-
-    showSync('Sincronizzato');
     DAYS=getDays(curYear);
     document.getElementById('yearVal').textContent=curYear;
     document.getElementById('agencyName').textContent=settings.agency||'Fleet Planner';
@@ -101,6 +131,22 @@ async function fbLoadAll(){
   }
 }
 window._fbLoadAll=fbLoadAll;
+
+// Refresh della pagina attualmente visibile (chiamato dai listener real-time).
+// Non refresha modal aperti per non perdere quello che l'utente sta scrivendo.
+function refreshActivePage(){
+  const planActive=document.getElementById('page-planning')?.classList.contains('active');
+  const listActive=document.getElementById('page-list')?.classList.contains('active');
+  const statsActive=document.getElementById('page-stats')?.classList.contains('active');
+  const clientsActive=document.getElementById('page-clients')?.classList.contains('active');
+  const fleetActive=document.getElementById('page-fleet')?.classList.contains('active');
+  if(planActive)buildTable();
+  if(listActive){populateListFilters();renderList();}
+  if(statsActive)renderStats();
+  if(clientsActive)renderClients();
+  if(fleetActive)renderFleet();
+  checkAlerts();
+}
 
 function mergeSettings(s){
   const out=JSON.parse(JSON.stringify(DEFAULT_SETTINGS));
@@ -152,6 +198,9 @@ function doLogin(){
 
 function doLogout(){
   if(!confirm("Esci dall'app?"))return;
+  // Disattivo tutti i listener real-time prima di uscire
+  _unsubscribers.forEach(u=>{try{u()}catch(_){}});
+  _unsubscribers=[];
   const{auth,signOut}=window._fb;
   signOut(auth).then(()=>{
     cars=[];rentals=[];clients=[];
@@ -448,9 +497,6 @@ function openNewRental(cid,si,ei){
   // Suggerimento prezzo automatico in base a categoria auto + stagione
   applyPrezzoSuggerito(car,dk(DAYS[si]));
 
-  // Nessun audit per nuovo noleggio
-  renderAuditLine(null);
-
   selColor=car.color||RCOLS[rentals.length%RCOLS.length];
   buildColorPick('colorPick',RCOLS,selColor,c=>selColor=c);
   document.getElementById('mRental').classList.add('open');
@@ -504,7 +550,6 @@ function openEditRental(rid){
   document.getElementById('btnDel').style.display='flex';
   document.getElementById('clientLookup').value='';
   document.getElementById('clientSuggest').innerHTML='';
-  renderAuditLine(r);
   document.getElementById('mRental').classList.add('open');
 }
 
@@ -562,80 +607,6 @@ function checkConflict(cid,si,ei,xid){
 
 function gv(id){const el=document.getElementById(id);return el?el.value.trim():''}
 
-// === AUDIT / HISTORY ===
-const FIELD_LABELS={
-  startKey:'Data inizio',endKey:'Data fine',carId:'Auto',
-  stato:'Stato',payStatus:'Stato pagamento',
-  km:'KM consegna',kmR:'KM restituzione',fuel:'Carburante cons.',clean:'Pulizia cons.',
-  tipo:'Tipo cliente',cognome:'Cognome',nome:'Nome',cf:'C.F./P.IVA',
-  indirizzo:'Indirizzo',tel:'Telefono',email:'Email',
-  pat:'N° Patente',patR:'Patente rilascio',patS:'Patente scadenza',
-  aCog:'Cond. agg. Cognome',aNom:'Cond. agg. Nome',aPat:'Cond. agg. Patente',aSca:'Cond. agg. Scadenza',
-  prezzo:'Prezzo/gg',sp:'Sconto %',se:'Sconto €',cau:'Cauzione',
-  acconto:'Acconto',pag:'Metodo pagamento',pen:'Penale',
-  totale:'Totale',saldo:'Saldo',
-  dCarr:'Danni carr. cons.',dVetri:'Danni vetri cons.',dInt:'Danni int. cons.',dCer:'Danni cerchi cons.',dNote:'Note danni cons.',
-  rCarr:'Carr. resa',rVetri:'Vetri resi',rFuel:'Carb. reso',rClean:'Pulizia resa',rNote:'Note resa',
-  note:'Note',color:'Colore barra'
-};
-
-function diffRental(oldR,newR){
-  const out=[];
-  Object.keys(FIELD_LABELS).forEach(k=>{
-    const a=oldR[k]==null?'':String(oldR[k]);
-    const b=newR[k]==null?'':String(newR[k]);
-    if(a!==b) out.push({field:k,label:FIELD_LABELS[k],from:a,to:b});
-  });
-  return out;
-}
-
-function fmtHistoryDateTime(iso){
-  if(!iso)return'—';
-  try{
-    const d=new Date(iso);
-    return `${p2(d.getDate())}/${p2(d.getMonth()+1)}/${d.getFullYear()} ${p2(d.getHours())}:${p2(d.getMinutes())}`;
-  }catch(_){return iso}
-}
-
-function renderAuditLine(r){
-  const el=document.getElementById('auditLine');
-  if(!el)return;
-  if(!r||!r.createdBy){el.innerHTML='';el.style.display='none';return}
-  const createdTxt=`Creato da <strong>${r.createdBy}</strong> il ${fmtHistoryDateTime(r.createdAt)}`;
-  const updatedTxt=(r.updatedBy && r.updatedAt && r.updatedAt!==r.createdAt)
-    ? ` · Modificato da <strong>${r.updatedBy}</strong> il ${fmtHistoryDateTime(r.updatedAt)}`
-    : '';
-  const histCount=(r.history||[]).length;
-  const histBtn=histCount?`<a href="javascript:void(0)" onclick="showHistory()" style="color:var(--accent);margin-left:8px;font-size:11px;text-decoration:underline">Storico (${histCount})</a>`:'';
-  el.innerHTML=createdTxt+updatedTxt+histBtn;
-  el.style.display='block';
-}
-
-function showHistory(){
-  if(!curRid)return;
-  const r=rentals.find(x=>x.id===curRid);
-  if(!r||!r.history||!r.history.length){toast('Nessuno storico disponibile');return}
-  const items=[...r.history].reverse().map(h=>{
-    const head=`<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
-      <div><strong style="color:var(--accent)">${h.action==='create'?'CREATO':'MODIFICATO'}</strong> da <strong>${h.user}</strong></div>
-      <div style="font-size:11px;color:var(--text3);font-family:DM Mono,monospace">${fmtHistoryDateTime(h.at)}</div>
-    </div>`;
-    let body='';
-    if(h.action==='create'){
-      body='<div style="font-size:11px;color:var(--text3);font-style:italic">Noleggio creato</div>';
-    } else if(h.changes && h.changes.length){
-      body='<div style="display:flex;flex-direction:column;gap:3px;font-size:11px">'
-        +h.changes.map(c=>`<div><span style="color:var(--text2)">${c.label}:</span> <span style="color:#fca5a5;text-decoration:line-through">${c.from||'—'}</span> <span style="color:var(--text3)">→</span> <span style="color:#6ee7b7">${c.to||'—'}</span></div>`).join('')
-        +'</div>';
-    } else {
-      body='<div style="font-size:11px;color:var(--text3);font-style:italic">Nessuna modifica registrata</div>';
-    }
-    return `<div style="background:var(--navy);border:1px solid var(--border);border-radius:7px;padding:10px 12px;margin-bottom:8px">${head}${body}</div>`;
-  }).join('');
-  document.getElementById('histBody').innerHTML=items;
-  document.getElementById('mHistory').classList.add('open');
-}
-
 function saveRental(){
   const _sk=document.getElementById('dStart')?.value||dk(DAYS[curSi]);
   const _ek=document.getElementById('dEnd')?.value||dk(DAYS[curEi]);
@@ -649,15 +620,9 @@ function saveRental(){
   const acconto=parseFloat(gv('f_acconto'))||0;
   const pen=parseFloat(gv('f_pen'))||0;
   const saldo=tot+pen-acconto;
-
-  // === Tracking utente ===
-  const userEmail = window._fbUser?.email || '?';
-  const nowIso = new Date().toISOString();
-  const prev = curRid ? rentals.find(x=>x.id===curRid) : null;
-
   const r={
     id:curRid||'r'+Date.now(),
-    ctrNum:curRid?(prev?.ctrNum||ctrCounter):ctrCounter,
+    ctrNum:curRid?(rentals.find(x=>x.id===curRid)?.ctrNum||ctrCounter):ctrCounter,
     carId:curCid,
     startKey:dk(DAYS[curSi]), endKey:dk(DAYS[curEi]),
     color:selColor, stato:gv('f_stato'), payStatus:gv('f_pay_status'),
@@ -674,24 +639,7 @@ function saveRental(){
     dCarr:gv('f_d_carr'), dVetri:gv('f_d_vetri'), dInt:gv('f_d_int'), dCer:gv('f_d_cer'), dNote:gv('f_d_note'),
     rCarr:gv('f_r_carr'), rVetri:gv('f_r_vetri'), rFuel:gv('f_r_fuel'), rClean:gv('f_r_clean'), rNote:gv('f_r_note'),
     note:gv('f_note'),
-    // Audit fields
-    createdBy: prev?.createdBy || userEmail,
-    createdAt: prev?.createdAt || nowIso,
-    updatedBy: userEmail,
-    updatedAt: nowIso,
-    history: prev?.history ? [...prev.history] : [],
   };
-
-  // Calcolo modifiche rispetto a versione precedente per lo storico
-  if(!prev){
-    r.history.push({user:userEmail,at:nowIso,action:'create',changes:[]});
-  } else {
-    const changes = diffRental(prev,r);
-    if(changes.length){
-      r.history.push({user:userEmail,at:nowIso,action:'edit',changes});
-    }
-  }
-
   if(!curRid){ctrCounter++; fbSet('meta','ctr',{value:ctrCounter});}
   if(curRid){const i=rentals.findIndex(x=>x.id===curRid);if(i>=0)rentals[i]=r;}
   else rentals.push(r);
@@ -863,7 +811,6 @@ function renderList(){
     else if(listSortKey==='giorni'){const siA=dIdx(a.startKey),eiA=dIdx(a.endKey),siB=dIdx(b.startKey),eiB=dIdx(b.endKey);va=siA>=0&&eiA>=0?eiA-siA:0;vb=siB>=0&&eiB>=0?eiB-siB:0}
     else if(listSortKey==='totale'){va=parseFloat(a.totale)||0;vb=parseFloat(b.totale)||0}
     else if(listSortKey==='ctr'){va=a.ctrNum||0;vb=b.ctrNum||0}
-    else if(listSortKey==='inserito'){va=a.createdBy||'';vb=b.createdBy||''}
     else{va=a.startKey||'';vb=b.startKey||''}
     if(va<vb)return -1*listSortDir; if(va>vb)return 1*listSortDir; return 0;
   });
@@ -877,12 +824,8 @@ function renderList(){
     const tot=parseFloat(r.totale)||0; if(tot)totalRev+=tot;
     const payS=r.payStatus||'nonpagato';
     const ctrStr=r.ctrNum?`CTR-${(r.startKey||'').split('-')[0]||curYear}-${p2(r.ctrNum)}`:'—';
-    // Inserito da: mostro la parte prima della @ per compattezza, full email in tooltip
-    const cb=r.createdBy||'';
-    const cbShort=cb?cb.split('@')[0]:'—';
-    const cbCell=`<td style="font-size:11px;color:var(--text2)" title="${cb}${r.createdAt?' · '+fmtHistoryDateTime(r.createdAt):''}">${cbShort}</td>`;
     const tr=document.createElement('tr');
-    tr.innerHTML=`<td style="font-family:'DM Mono',monospace;font-size:10px;color:var(--text3)">${ctrStr}</td><td><strong>${r.cognome||'—'}</strong> ${r.nome||''}<br><span style="font-size:10px;color:var(--text3)">${r.cf||''}</span></td><td style="font-family:'DM Mono',monospace;font-size:10px;color:var(--accent)">${car?car.targa:'—'}</td><td>${fd(r.startKey)}</td><td>${fd(r.endKey)}</td><td>${days}</td><td style="font-family:'DM Mono',monospace">${tot?`€ ${tot.toFixed(0)}`:'—'}</td><td><span class="badge ${payS}">${payS}</span></td><td><span class="badge ${r.stato||'noleggio'}">${r.stato||'noleggio'}</span></td>${cbCell}<td style="color:var(--text3);font-size:11px;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${r.note||''}</td>`;
+    tr.innerHTML=`<td style="font-family:'DM Mono',monospace;font-size:10px;color:var(--text3)">${ctrStr}</td><td><strong>${r.cognome||'—'}</strong> ${r.nome||''}<br><span style="font-size:10px;color:var(--text3)">${r.cf||''}</span></td><td style="font-family:'DM Mono',monospace;font-size:10px;color:var(--accent)">${car?car.targa:'—'}</td><td>${fd(r.startKey)}</td><td>${fd(r.endKey)}</td><td>${days}</td><td style="font-family:'DM Mono',monospace">${tot?`€ ${tot.toFixed(0)}`:'—'}</td><td><span class="badge ${payS}">${payS}</span></td><td><span class="badge ${r.stato||'noleggio'}">${r.stato||'noleggio'}</span></td><td style="color:var(--text3);font-size:11px;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${r.note||''}</td>`;
     tr.onclick=()=>openEditRental(r.id);
     tbody.appendChild(tr);
   });
