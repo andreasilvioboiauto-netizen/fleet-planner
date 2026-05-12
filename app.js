@@ -366,6 +366,9 @@ function renderBar(r){
       const lbl=r.cognome?`${r.cognome}${r.nome?' '+r.nome.charAt(0)+'.':''}`:(r.stato==='manutenzione'?'Manutenzione':r.stato==='opzione'?'Opzione':'—');
       bar.innerHTML=`<span class="rbar-lbl">${lbl}</span>`;
     }
+    bar.addEventListener('mousedown',e=>{e.stopPropagation();});
+    bar.addEventListener('touchstart',e=>{e.stopPropagation();},{passive:true});
+    bar.addEventListener('touchend',e=>{e.stopPropagation();e.preventDefault();openEditRental(r.id);});
     bar.addEventListener('click',e=>{e.stopPropagation();openEditRental(r.id)});
     bar.title=(r.cognome||'')+(r.nome?' '+r.nome:'')+' | '+fd(r.startKey)+' → '+fd(r.endKey);
     if(new Date(r.endKey)<TODAY){bar.style.opacity='0.4';bar.style.filter='grayscale(40%)';}
