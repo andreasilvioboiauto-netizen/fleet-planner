@@ -366,9 +366,6 @@ function renderBar(r){
       const lbl=r.cognome?`${r.cognome}${r.nome?' '+r.nome.charAt(0)+'.':''}`:(r.stato==='manutenzione'?'Manutenzione':r.stato==='opzione'?'Opzione':'—');
       bar.innerHTML=`<span class="rbar-lbl">${lbl}</span>`;
     }
-    bar.addEventListener('mousedown',e=>{e.stopPropagation();});
-    bar.addEventListener('touchstart',e=>{e.stopPropagation();},{passive:true});
-    bar.addEventListener('touchend',e=>{e.stopPropagation();e.preventDefault();openEditRental(r.id);});
     bar.addEventListener('click',e=>{e.stopPropagation();openEditRental(r.id)});
     bar.title=(r.cognome||'')+(r.nome?' '+r.nome:'')+' | '+fd(r.startKey)+' → '+fd(r.endKey);
     if(new Date(r.endKey)<TODAY){bar.style.opacity='0.4';bar.style.filter='grayscale(40%)';}
@@ -398,12 +395,7 @@ function onMU(e){
 }
 document.addEventListener('mouseup',()=>{if(drag){clearHilite();drag=null;}});
 
-function onTouchStart(e){
-  // Se il dito parte sopra una barra esistente, apri l'edit invece di creare un nuovo noleggio
-  const bar=e.target&&e.target.closest?e.target.closest('.rbar'):null;
-  if(bar&&bar.dataset.rid){drag=null;openEditRental(bar.dataset.rid);return;}
-  const td=e.currentTarget;drag={cid:td.dataset.cid,si:+td.dataset.di,ei:+td.dataset.di};hilite();
-}
+function onTouchStart(e){const td=e.currentTarget;drag={cid:td.dataset.cid,si:+td.dataset.di,ei:+td.dataset.di};hilite();}
 function onTouchMove(e){if(!drag)return;e.preventDefault();const t=e.touches[0];const el=document.elementFromPoint(t.clientX,t.clientY);if(el&&el.dataset&&el.dataset.di&&el.dataset.cid===drag.cid){drag.ei=+el.dataset.di;hilite();}}
 function onTouchEnd(e){if(!drag)return;clearHilite();const si=Math.min(drag.si,drag.ei),ei=Math.max(drag.si,drag.ei);const cid=drag.cid;drag=null;openNewRental(cid,si,ei);}
 document.addEventListener('touchend',()=>{if(drag){clearHilite();drag=null;}});
@@ -1134,6 +1126,21 @@ function exportMonthPDF(){
 // ---
 // UTILS
 // ---
+function setTheme(t){
+  if(!['light','medium','dark'].includes(t))t='dark';
+  document.documentElement.setAttribute('data-theme',t);
+  try{localStorage.setItem('fp_theme',t);}catch(_){}
+  document.querySelectorAll('.theme-switch button').forEach(b=>{
+    b.classList.toggle('on',b.dataset.themeBtn===t);
+  });
+}
+// All'avvio sincronizzo l'highlight del bottone con il tema attivo
+(function(){
+  const t=(document.documentElement.getAttribute('data-theme'))||'dark';
+  // L'header viene renderizzato già da HTML, quindi posso evidenziarlo subito
+  document.addEventListener('DOMContentLoaded',()=>setTheme(t));
+})();
+
 function closeM(id){const el=document.getElementById(id);if(el)el.classList.remove('open')}
 document.querySelectorAll('.overlay').forEach(o=>o.addEventListener('click',e=>{if(e.target===o)o.classList.remove('open')}));
 

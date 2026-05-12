@@ -7,16 +7,57 @@
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,wght@0,300;0,400;0,500;0,600;1,400&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
 <!-- Firebase SDK -->
 <script type="module" src="firebase-init.js"></script>
+<script>
+  // Applica subito il tema salvato per evitare flash
+  (function(){try{var t=localStorage.getItem('fp_theme')||'dark';document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
+</script>
 <style>
 :root{
---navy:#0f1f3d;--navy2:#162847;--blue:#1a56db;--blue-l:#3b82f6;
+--blue:#1a56db;--blue-l:#3b82f6;
 --accent:#f59e0b;--accent2:#fbbf24;--green:#10b981;--red:#ef4444;
 --orange:#f97316;--purple:#8b5cf6;--teal:#0891b2;
+--cell-w:28px;--row-h:36px;--car-col:185px;
+--app-h:100vh;
+}
+/* TEMA SCURO (default) */
+:root,
+[data-theme="dark"]{
+--navy:#0f1f3d;--navy2:#162847;
 --bg:#0b1629;--surf:#111f38;--surf2:#162744;--surf3:#1c3058;
 --border:rgba(255,255,255,0.08);--border2:rgba(255,255,255,0.14);
 --text:#e8edf5;--text2:#8fa3c0;--text3:#5a7499;
---cell-w:28px;--row-h:36px;--car-col:185px;
---app-h:100vh;
+--row-hover:rgba(255,255,255,.03);
+--cell-hover:rgba(59,130,246,.14);
+--we-bg:rgba(255,255,255,.015);
+--td-bg:rgba(245,158,11,.05);
+--cell-border:rgba(255,255,255,.02);
+--cell-border2:rgba(255,255,255,.03);
+}
+/* TEMA MEDIO */
+[data-theme="medium"]{
+--navy:#2a3a55;--navy2:#34465f;
+--bg:#3d4f6b;--surf:#475a78;--surf2:#526685;--surf3:#5f7493;
+--border:rgba(255,255,255,0.10);--border2:rgba(255,255,255,0.18);
+--text:#f0f3f8;--text2:#c0cdde;--text3:#92a3bd;
+--row-hover:rgba(255,255,255,.05);
+--cell-hover:rgba(59,130,246,.20);
+--we-bg:rgba(255,255,255,.03);
+--td-bg:rgba(245,158,11,.10);
+--cell-border:rgba(255,255,255,.04);
+--cell-border2:rgba(255,255,255,.05);
+}
+/* TEMA CHIARO (celeste) */
+[data-theme="light"]{
+--navy:#cfe1f3;--navy2:#bcd4ec;
+--bg:#e8f1fa;--surf:#f4f8fc;--surf2:#dcebf7;--surf3:#cce0f2;
+--border:rgba(15,31,61,0.10);--border2:rgba(15,31,61,0.18);
+--text:#0f1f3d;--text2:#3d5980;--text3:#6c8aaf;
+--row-hover:rgba(15,31,61,.04);
+--cell-hover:rgba(26,86,219,.12);
+--we-bg:rgba(15,31,61,.03);
+--td-bg:rgba(245,158,11,.14);
+--cell-border:rgba(15,31,61,.05);
+--cell-border2:rgba(15,31,61,.06);
 }
 @supports(height:100dvh){:root{--app-h:100dvh}}
 *{box-sizing:border-box;margin:0;padding:0}
@@ -30,6 +71,10 @@ header{background:var(--surf);border-bottom:1px solid var(--border);min-height:5
 .year-nav button{background:none;border:none;color:var(--text2);cursor:pointer;padding:2px 8px;border-radius:4px;font-size:13px;transition:.15s}
 .year-nav button:hover{background:rgba(255,255,255,.08);color:var(--text)}
 .year-val{font-family:'DM Mono',monospace;font-size:13px;color:var(--accent);padding:0 6px;min-width:44px;text-align:center}
+.theme-switch{display:flex;gap:2px;background:var(--navy);border:1px solid var(--border);border-radius:6px;padding:2px}
+.theme-switch button{background:none;border:none;color:var(--text2);cursor:pointer;padding:3px 8px;border-radius:4px;font-size:13px;line-height:1;transition:.15s}
+.theme-switch button:hover{background:var(--surf2);color:var(--text)}
+.theme-switch button.on{background:var(--accent);color:var(--navy)}
 .spacer{flex:1}
 .tabs{display:flex;gap:2px;background:var(--navy);border-radius:7px;padding:3px}
 .tab{padding:5px 12px;border-radius:5px;font-size:12px;font-weight:500;cursor:pointer;color:var(--text2);border:none;background:none;transition:.15s}
@@ -66,9 +111,9 @@ header{background:var(--surf);border-bottom:1px solid var(--border);min-height:5
 .car-model{font-size:9px;color:var(--text2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:160px}
 .car-cat{font-size:8px;color:var(--accent);font-weight:600;letter-spacing:.5px}
 .car-exp{font-size:8px;color:var(--red);line-height:1}
-.dcell{width:var(--cell-w);min-width:var(--cell-w);max-width:var(--cell-w);height:var(--row-h);border-bottom:1px solid rgba(255,255,255,.03);border-right:1px solid rgba(255,255,255,.02);cursor:pointer;position:relative;transition:background .08s;user-select:none}
-.dcell:hover{background:rgba(59,130,246,.14)!important}
-.dcell.we{background:rgba(255,255,255,.015)}.dcell.td{background:rgba(245,158,11,.05)}
+.dcell{width:var(--cell-w);min-width:var(--cell-w);max-width:var(--cell-w);height:var(--row-h);border-bottom:1px solid var(--cell-border2);border-right:1px solid var(--cell-border);cursor:pointer;position:relative;transition:background .08s;user-select:none}
+.dcell:hover{background:var(--cell-hover)!important}
+.dcell.we{background:var(--we-bg)}.dcell.td{background:var(--td-bg)}
 .dcell.mb{border-right:2px solid rgba(245,158,11,.18)}
 .dcell.sel{background:rgba(59,130,246,.28)!important;outline:1px solid var(--blue-l)}
 .rbar{position:absolute;top:4px;height:calc(var(--row-h) - 8px);border-radius:3px;z-index:5;display:flex;align-items:center;padding:0 6px;cursor:pointer;overflow:hidden;pointer-events:all;transition:filter .15s,transform .1s;box-shadow:0 2px 5px rgba(0,0,0,.4);white-space:nowrap}
@@ -84,7 +129,7 @@ header{background:var(--surf);border-bottom:1px solid var(--border);min-height:5
 .rtable th{background:var(--surf2);color:var(--text2);font-weight:600;font-size:10px;letter-spacing:.5px;text-transform:uppercase;padding:7px 9px;text-align:left;border-bottom:1px solid var(--border);position:sticky;top:0;cursor:pointer}
 .rtable th:hover{color:var(--text)}
 .rtable td{padding:7px 9px;border-bottom:1px solid rgba(255,255,255,.04);vertical-align:middle}
-.rtable tr:hover td{background:rgba(255,255,255,.03);cursor:pointer}
+.rtable tr:hover td{background:var(--row-hover);cursor:pointer}
 .badge{display:inline-block;padding:2px 7px;border-radius:10px;font-size:10px;font-weight:600}
 .badge.noleggio{background:rgba(37,99,235,.3);color:#93c5fd}
 .badge.opzione{background:rgba(139,92,246,.3);color:#c4b5fd}
@@ -294,6 +339,11 @@ header{padding:6px 10px;gap:6px}
 <label class="hbtn" style="cursor:pointer">↑ Importa<input type="file" accept=".json" style="display:none" onchange="importData(event)"></label>
 <button class="hbtn" onclick="exportMonthPDF()" style="background:rgba(239,68,68,.12);border-color:rgba(239,68,68,.3);color:#ef4444">📄 PDF</button>
 <button class="btn-sm" onclick="exportCSV()">CSV</button>
+<div class="theme-switch" title="Cambia tema">
+<button data-theme-btn="light" onclick="setTheme('light')" title="Chiaro">☀</button>
+<button data-theme-btn="medium" onclick="setTheme('medium')" title="Medio">◐</button>
+<button data-theme-btn="dark" onclick="setTheme('dark')" title="Scuro">🌙</button>
+</div>
 <div class="sync-indicator" id="syncIndicator" style="display:none">
 <div class="sync-dot"></div><span id="syncLabel">Sincronizzato</span>
 </div>
@@ -362,7 +412,6 @@ header{padding:6px 10px;gap:6px}
 <th onclick="sortList('totale')">Totale</th>
 <th>Pagamento</th>
 <th>Stato</th>
-<th onclick="sortList('inserito')">Inserito da</th>
 <th>Note</th>
 </tr></thead>
 <tbody id="listBody"></tbody>
@@ -465,7 +514,6 @@ header{padding:6px 10px;gap:6px}
 <button class="mclose" onclick="closeM('mRental')">✕</button>
 </div>
 <div class="mbody">
-<div id="auditLine" style="display:none;background:var(--navy);border:1px solid var(--border);border-radius:6px;padding:7px 11px;font-size:11px;color:var(--text2);margin-bottom:10px"></div>
 <div class="conflict" id="conflictWarn">⚠️ Le date si sovrappongono con un noleggio esistente.</div>
 
 <div class="fsec">
@@ -606,17 +654,6 @@ header{padding:6px 10px;gap:6px}
 <button class="btn btn-ghost" onclick="closeM('mRental')">Annulla</button>
 <button class="btn btn-teal" onclick="printContract()">🖨 Contratto</button>
 <button class="btn btn-accent" onclick="saveRental()">✓ Salva</button>
-</div>
-</div>
-</div>
-
-<!-- ══ MODAL STORICO ══ -->
-<div class="overlay" id="mHistory">
-<div class="modal sm">
-<div class="mhd"><div><div class="mtitle">Storico modifiche</div><div class="msub">Cronologia delle modifiche al noleggio</div></div><button class="mclose" onclick="closeM('mHistory')">✕</button></div>
-<div class="mbody" id="histBody" style="max-height:60vh;overflow-y:auto"></div>
-<div class="mfoot">
-<button class="btn btn-ghost" onclick="closeM('mHistory')">Chiudi</button>
 </div>
 </div>
 </div>
