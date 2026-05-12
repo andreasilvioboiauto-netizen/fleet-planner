@@ -624,38 +624,108 @@ function renderList(){
 // STATS
 // ---
 function renderStats(){
-  const wrap=document.getElementById('statsWrap');
-  const totalDays=(new Date(curYear,11,31)-new Date(curYear,0,1))/86400000+1;
+  const wrap=document.getElementById('page-stats');
+  if(!wrap)return;
   const dArr=getDays(curYear);
-  const yRentals=rentals.filter(r=>r.startKey&&(r.startKey.startsWith(curYear)||r.endKey?.startsWith(curYear)));
-  let totalRev=0, totalRented=0, totalPending=0;
-  yRentals.forEach(r=>{
-    const si=dArr.findIndex(d=>dk(d)===r.startKey), ei=dArr.findIndex(d=>dk(d)===r.endKey);
-    const d=si>=0&&ei>=0?ei-si+1:0; totalRented+=d;
-    const tot=parseFloat(r.totale)||0; totalRev+=tot;
-    if(r.payStatus!=='pagato')totalPending+=parseFloat(r.saldo)||0;
-  });
+  const totalDays=dArr.length;
+  const yRentals=rentals.filter(r=>r.startKey&&r.startKey.startsWith(curYear));
+  const totalRev=yRentals.reduce((s,r)=>s+(parseFloat(r.totale)||0),0);
+  const totalRented=yRentals.reduce((s,r)=>{
+    const si=dArr.findIndex(d=>dk(d)===r.startKey),ei=dArr.findIndex(d=>dk(d)===r.endKey);
+    return s+(si>=0&&ei>=0?ei-si+1:0);
+  },0);
   const avgDays=yRentals.length?Math.round(totalRented/yRentals.length):0;
-  const monthly=Array(12).fill(0);
-  yRentals.forEach(r=>{if(!r.startKey)return;const m=parseInt(r.startKey.split('-')[1])-1;if(m>=0&&m<12)monthly[m]+=parseFloat(r.totale)||0;});
-  const maxMon=Math.max(...monthly,1);
+  const totalPending=rentals.reduce((s,r)=>s+(parseFloat(r.saldo)||0),0);
+
+  // KPI
+  let h='<div class="kpi-grid">';
+  h+='<div class="kpi"><div class="kpi-val">'+yRentals.length+'</div><div class="kpi-lbl">Noleggi '+curYear+'</div></div>';
+  h+='<div class="kpi"><div class="kpi-val">&euro; '+Math.round(totalRev).toLocaleString('it')+'</div><div class="kpi-lbl">Incasso totale (IVA incl.)</div></div>';
+  h+='<div class="kpi"><div class="kpi-val">'+totalRented+'</div><div class="kpi-lbl">Giorni noleggiati</div></div>';
+  h+='<div class="kpi"><div class="kpi-val">'+avgDays+'</div><div class="kpi-lbl">Durata media (gg)</div></div>';
+  h+='</div>';
+
+  // Grafico mensile
+  const monthly=Array(12).fill(0).map((_,mi)=>{
+    const mrs=yRentals.filter(r=>new Date(r.startKey).getMonth()===mi);
+    return{m:MONTHS[mi].substring(0,3),rev:mrs.reduce((s,r)=>s+(parseFloat(r.totale)||0),0),n:mrs.length};
+  });
+  const maxRev=Math.max(1,...monthly.map(m=>m.rev));
+  h+='<div class="chart-box"><div class="chart-title">Incasso mensile (&euro;)</div><div class="monthly-chart">';
+  monthly.forEach(m=>{
+    const pct=Math.round(m.rev/maxRev*100);
+    h+='<div class="month-bar"><div class="month-fill" style="height:'+pct+'%" title="'+m.m+': &euro;'+Math.round(m.rev).toLocaleString('it')+'"></div>';
+    h+='<div class="month-label">'+m.m+'</div>';
+    h+='<div class="month-val">&euro;&thinsp;'+Math.round(m.rev/1000*10)/10+'k</div></div>';
+  });
+  h+='</div></div>';
+
+  // Provvigioni
+  h+='<div class="chart-box" style="background:rgba(16,185,129,.07);border-color:rgba(16,185,129,.2)">';
+  h+='<div class="chart-title" style="color:var(--green)">Provvigioni agenti (5% su incasso IVA incl.)</div>';
+  h+='<div style="display:flex;gap:24px;margin-top:8px">';
+  h+='<div><div style="font-size:22px;font-weight:700;color:var(--green)">&euro; '+Math.round(totalRev*0.05).toLocaleString('it')+'</div><div style="font-size:11px;color:var(--text3)">Andrea</div></div>';
+  h+='<div><div style="font-size:22px;font-weight:700;color:var(--green)">&euro; '+Math.round(totalRev*0.05).toLocaleString('it')+'</div><div style="font-size:11px;color:var(--text3)">Michele</div></div>';
+  h+='</div></div>';
+
+  // Saldo da incassare
+  if(totalPending>0){
+    h+='<div class="chart-box" style="background:rgba(245,158,11,.07);border-color:rgba(245,158,11,.2)">';
+    h+='<div class="chart-title" style="color:var(--accent)">Saldo da incassare (tutti gli anni)</div>';
+    h+='<div style="font-size:28px;font-weight:700;color:var(--accent)">&euro; '+Math.round(totalPending).toLocaleString('it')+'</div>';
+    h+='</div>';
+  }
+
+  // Tabella ricavo per auto
   const carOcc=cars.map(car=>{
     let d=0,rev=0,nole=0;
-    rentals.filter(r=>r.carId===car.id&&r.startKey&&r.startKey.startsWith(curYear)).forEach(r=>{
+    yRentals.filter(r=>r.carId===car.id).forEach(r=>{
       const si=dArr.findIndex(x=>dk(x)===r.startKey),ei=dArr.findIndex(x=>dk(x)===r.endKey);
       if(si>=0&&ei>=0)d+=ei-si+1;
-      rev+=parseFloat(r.totale)||0; nole++;
+      rev+=parseFloat(r.totale)||0;
+      nole++;
     });
     return{car,days:d,pct:Math.min(100,Math.round(d/totalDays*100)),rev,nole};
   }).sort((a,b)=>b.rev-a.rev);
-  wrap.innerHTML=`<div class="stats-grid"><div class="kpi"><div class="kpi-val">${yRentals.length}</div><div class="kpi-lbl">Noleggi ${curYear}</div></div><div class="kpi"><div class="kpi-val">€ ${Math.round(totalRev).toLocaleString('it')}</div><div class="kpi-lbl">Incasso totale (IVA incl.)</div></div><div class="kpi"><div class="kpi-val">${totalRented}</div><div class="kpi-lbl">Giorni noleggiati</div></div><div class="kpi"><div class="kpi-val">${avgDays}</div><div class="kpi-lbl">Durata media (gg)</div></div></div>
-  <div class="chart-row"><div class="chart-box"><div class="chart-title">Incasso mensile (€)</div><div class="bar-chart">${MONTHS.map((m,i)=>`<div class="bc-row"><div class="bc-lbl">${m.slice(0,3)}</div><div class="bc-track"><div class="bc-fill" style="width:${(monthly[i]/maxMon*100).toFixed(1)}%"></div></div><div class="bc-val">€ ${Math.round(monthly[i]).toLocaleString('it')}</div></div>${(function(){var rs=carOcc.map(function(o){var cl=o.car.color||'var(--accent)';var rv=o.rev>0?'€ '+Math.round(o.rev).toLocaleString('it'):'—';var rc=o.rev>0?'var(--green)':'var(--text3)';return '<tr style="border-bottom:1px solid rgba(255,255,255,.04)"><td style="padding:5px 8px"><span style="color:'+cl+';font-weight:600;font-size:11px">'+o.car.targa+'</span><div style="font-size:10px;color:var(--text3)">'+o.car.model+'</div></td><td style="text-align:center;padding:5px 8px;color:var(--text2)">'+o.nole+'</td><td style="text-align:center;padding:5px 8px;color:var(--text2)">'+o.days+'</td><td style="padding:5px 8px"><div style="display:flex;align-items:center;gap:4px"><div style="flex:1;height:5px;background:rgba(255,255,255,.08);border-radius:3px"><div style="width:'+o.pct+'%;height:100%;background:'+cl+';border-radius:3px"></div></div><span style="font-size:10px;color:var(--text3);width:26px;text-align:right">'+o.pct+'%</span></div></td><td style="text-align:right;padding:5px 8px;font-weight:700;color:'+rc+'">'+rv+'</td></tr>';}).join('');var tn=carOcc.reduce(function(s,o){return s+o.nole;},0);var td2=carOcc.reduce(function(s,o){return s+o.days;},0);var tv=carOcc.reduce(function(s,o){return s+o.rev;},0);return '<div class="chart-box" style="overflow-x:auto"><div class="chart-title">💰 Ricavo per auto — '+curYear+'</div><table style="width:100%;border-collapse:collapse;font-size:12px;margin-top:8px"><thead><tr><th style="text-align:left;padding:5px 8px;color:var(--text3)">Auto</th><th style="text-align:center;padding:5px 8px;color:var(--text3)">N°</th><th style="text-align:center;padding:5px 8px;color:var(--text3)">GG</th><th style="text-align:center;padding:5px 8px;color:var(--text3)">Occ</th><th style="text-align:right;padding:5px 8px;color:var(--text3)">Ricavo</th></tr></thead><tbody>'+rs+'<tr style="border-top:2px solid rgba(255,255,255,.15)"><td style="padding:6px 8px;font-weight:600">TOT '+curYear+'</td><td style="text-align:center;padding:6px 8px;font-weight:600">'+tn+'</td><td style="text-align:center;padding:6px 8px;font-weight:600">'+td2+'</td><td></td><td style="text-align:right;padding:6px 8px;font-weight:700;color:var(--green)">€ '+Math.round(tv).toLocaleString('it')+'</td></tr></tbody></table></div>';})()}o.rev;},0)).toLocaleString('it')}</td></tr></tbody></table></div>`).join('')}</div></div></div>
-  ${totalPending>0?`<div class="chart-box" style="background:rgba(239,68,68,.08);border-color:rgba(239,68,68,.25);max-width:300px"><div class="chart-title" style="color:#fca5a5">Saldo da incassare</div><div style="font-size:22px;font-weight:600;font-family:'DM Mono',monospace;color:#fca5a5">€ ${Math.round(totalPending).toLocaleString('it')}</div></div>`:''}`;
-}
 
-// ---
-// CLIENTS
-// ---
+  const totNole=carOcc.reduce((s,o)=>s+o.nole,0);
+  const totDays=carOcc.reduce((s,o)=>s+o.days,0);
+  const totRev=carOcc.reduce((s,o)=>s+o.rev,0);
+
+  h+='<div class="chart-box" style="overflow-x:auto">';
+  h+='<div class="chart-title">&#128200; Ricavo e occupazione per auto &mdash; '+curYear+'</div>';
+  h+='<table style="width:100%;border-collapse:collapse;font-size:12px;margin-top:10px">';
+  h+='<thead><tr style="border-bottom:1px solid rgba(255,255,255,.12)">';
+  h+='<th style="text-align:left;padding:6px 8px;color:var(--text3);font-weight:500">Auto</th>';
+  h+='<th style="text-align:center;padding:6px 8px;color:var(--text3);font-weight:500">Noleggi</th>';
+  h+='<th style="text-align:center;padding:6px 8px;color:var(--text3);font-weight:500">Giorni</th>';
+  h+='<th style="padding:6px 8px;color:var(--text3);font-weight:500">Occupazione</th>';
+  h+='<th style="text-align:right;padding:6px 8px;color:var(--text3);font-weight:500">Ricavo</th>';
+  h+='</tr></thead><tbody>';
+  carOcc.forEach(function(o){
+    var col=o.car.color||'var(--accent)';
+    var rv=o.rev>0?'&euro; '+Math.round(o.rev).toLocaleString('it'):'&mdash;';
+    var rc=o.rev>0?'var(--green)':'var(--text3)';
+    h+='<tr style="border-bottom:1px solid rgba(255,255,255,.04)">';
+    h+='<td style="padding:6px 8px"><span style="color:'+col+';font-weight:700;font-family:DM Mono,monospace;font-size:12px">'+o.car.targa+'</span>';
+    h+='<div style="font-size:10px;color:var(--text3);margin-top:1px">'+o.car.model+'</div></td>';
+    h+='<td style="text-align:center;padding:6px 8px;color:var(--text2)">'+o.nole+'</td>';
+    h+='<td style="text-align:center;padding:6px 8px;color:var(--text2)">'+o.days+'</td>';
+    h+='<td style="padding:6px 8px"><div style="display:flex;align-items:center;gap:6px">';
+    h+='<div style="flex:1;height:6px;background:rgba(255,255,255,.08);border-radius:3px"><div style="width:'+o.pct+'%;height:100%;background:'+col+';border-radius:3px"></div></div>';
+    h+='<span style="font-size:11px;color:var(--text3);width:32px;text-align:right">'+o.pct+'%</span></div></td>';
+    h+='<td style="text-align:right;padding:6px 8px;font-weight:700;font-family:DM Mono,monospace;color:'+rc+'">'+rv+'</td>';
+    h+='</tr>';
+  });
+  h+='<tr style="border-top:2px solid rgba(255,255,255,.15)">';
+  h+='<td style="padding:7px 8px;font-weight:700">TOTALE '+curYear+'</td>';
+  h+='<td style="text-align:center;padding:7px 8px;font-weight:700">'+totNole+'</td>';
+  h+='<td style="text-align:center;padding:7px 8px;font-weight:700">'+totDays+'</td><td></td>';
+  h+='<td style="text-align:right;padding:7px 8px;font-weight:700;font-family:DM Mono,monospace;color:var(--green)">&euro; '+Math.round(totRev).toLocaleString('it')+'</td>';
+  h+='</tr></tbody></table></div>';
+
+  wrap.innerHTML=h;
+}
 function renderClients(){
   const q=(document.getElementById('clientSearch').value||'').toLowerCase();
   const list=clients.filter(c=>!q||(c.cognome||'').toLowerCase().includes(q)||(c.nome||'').toLowerCase().includes(q)||(c.cf||'').toLowerCase().includes(q));
