@@ -1,23 +1,32 @@
-
 // ---
 // CONSTANTS AND STATE
 // ---
 const MONTHS=['Gennaio','Febbraio','Marzo','Aprile','Maggio','Giugno','Luglio','Agosto','Settembre','Ottobre','Novembre','Dicembre'];
 const RCOLS=['#2563eb','#0891b2','#059669','#d97706','#dc2626','#7c3aed','#db2777','#0d9488','#65a30d','#ea580c','#4f46e5','#0284c7','#16a34a','#ca8a04','#b91c1c'];
+const CATEGORIES=[['A','Economica'],['B','Compatta'],['C','Berlina/Familiare'],['D','SUV'],['E','Premium']];
+const SEASONS=['alta','media','bassa'];
+const SEASON_COLORS={alta:'#ef4444',media:'#f59e0b',bassa:'#10b981'};
+const DEFAULT_SETTINGS={
+  agency:'',address:'',phone:'',email:'',piva:'',foro:'',clauses:'',
+  stagioni:{alta:{from:'07-01',to:'08-31'},media:{from:'06-01',to:'06-30'}},
+  listino:{A:{alta:35,media:28,bassa:22},B:{alta:50,media:40,bassa:32},C:{alta:65,media:52,bassa:42},D:{alta:80,media:65,bassa:52},E:{alta:110,media:90,bassa:70}}
+};
 const TODAY=new Date(); TODAY.setHours(0,0,0,0);
-
 let curYear=TODAY.getFullYear();
 let DAYS=[];
+
 // In-memory state (sincronizzato da Firebase)
-let cars=[], rentals=[], clients=[], settings={agency:'',address:'',phone:'',email:'',piva:'',foro:'',clauses:'',stagioni:{alta:{from:'07-01',to:'08-31'},media:{from:'06-01',to:'06-30'}},listino:{A:{alta:30,media:25,bassa:20},B:{alta:50,media:40,bassa:35},C:{alta:60,media:50,bassa:40},D:{alta:70,media:60,bassa:50},E:{alta:100,media:80,bassa:65}}};
+let cars=[], rentals=[], clients=[];
+let settings=JSON.parse(JSON.stringify(DEFAULT_SETTINGS));
 let ctrCounter=1;
+
 let listSortKey='inizio', listSortDir=-1;
 let drag=null, selColor=RCOLS[0];
 let curRid=null, curCid=null, curSi=null, curEi=null;
 let curClientId=null, curCarEditId=null, selCarColor=RCOLS[0];
 
 // ---
-// FIREBASE STORAGE (sostituisce localStorage)
+// FIREBASE STORAGE
 // ---
 function uid(){return window._fbUser?window._fbUser.uid:null}
 
@@ -26,8 +35,13 @@ async function fbSet(collection, id, data){
   try{
     const{db,doc,setDoc}=window._fb;
     await setDoc(doc(db,'users',uid(),collection,id),data);
-    if(['cars','rentals','clients'].includes(collection)){try{localStorage.setItem('fp_'+collection+'_'+uid(),JSON.stringify(collection==='cars'?cars:collection==='rentals'?rentals:clients));}catch(_){}}
-  }catch(e){console.error('fbSet error',e);toast('Errore connessione','err');['cars','rentals','clients'].includes(collection)&&(()=>{try{localStorage.setItem('fp_'+collection+'_'+uid(),JSON.stringify(collection==='cars'?cars:collection==='rentals'?rentals:clients));}catch(_){}})()}
+    if(['cars','rentals','clients'].includes(collection)){
+      try{localStorage.setItem('fp_'+collection+'_'+uid(),JSON.stringify(collection==='cars'?cars:collection==='rentals'?rentals:clients));}catch(_){}
+    }
+  }catch(e){
+    console.error('fbSet error',e);
+    toast('Errore connessione','err');
+  }
 }
 
 async function fbGetAll(col){
@@ -48,24 +62,6 @@ async function fbDelete(col,id){
   }catch(e){console.error('fbDelete error',e)}
 }
 
-// Salva singolo documento
-function sv(key,val){
-  // key: 'fp_cars','fp_rentals','fp_clients','fp_settings','fp_ctr'
-  const col=key.replace('fp_','');
-  if(col==='ctr'){
-    fbSet('meta','ctr',{value:val});
-    return;
-  }
-  if(col==='settings'){
-    fbSet('meta','settings',val);
-    return;
-  }
-  // Per array: salva ogni elemento come documento separato
-  if(Array.isArray(val)){
-    val.forEach(item=>fbSet(col,item.id,item));
-  }
-}
-
 // Carica tutto da Firebase
 async function fbLoadAll(){
   showSync('Caricamento...');
@@ -73,22 +69,24 @@ async function fbLoadAll(){
     const [carsData, rentalsData, clientsData] = await Promise.all([
       fbGetAll('cars'), fbGetAll('rentals'), fbGetAll('clients')
     ]);
-    // Carica meta (settings + ctr)
     const{db,doc,getDoc}=window._fb;
     const settingsSnap = await getDoc(doc(db,'users',uid(),'meta','settings'));
-    const ctrSnap      = await getDoc(doc(db,'users',uid(),'meta','ctr'));
+    const ctrSnap = await getDoc(doc(db,'users',uid(),'meta','ctr'));
 
     if(carsData.length){cars=carsData;try{localStorage.setItem('fp_cars_'+uid(),JSON.stringify(cars));}catch(_){}}
     else{const _lsC=localStorage.getItem('fp_cars_'+uid());cars=_lsC?JSON.parse(_lsC):[];}
+
     if(rentalsData.length){rentals=rentalsData;try{localStorage.setItem('fp_rentals_'+uid(),JSON.stringify(rentals));}catch(_){}}
     else{const _lsR=localStorage.getItem('fp_rentals_'+uid());rentals=_lsR?JSON.parse(_lsR):[];}
+
     if(clientsData.length){clients=clientsData;try{localStorage.setItem('fp_clients_'+uid(),JSON.stringify(clients));}catch(_){}}
     else{const _lsC2=localStorage.getItem('fp_clients_'+uid());clients=_lsC2?JSON.parse(_lsC2):[];}
-    settings= settingsSnap.exists()?settingsSnap.data():{agency:'',address:'',phone:'',email:'',piva:'',foro:'',clauses:''};
-    ctrCounter = ctrSnap.exists()?ctrSnap.data().value:1;
 
-    // Se cars era vuoto (primo avvio), salva le demo
-    if(!carsData.length) cars.forEach(c=>fbSet('cars',c.id,c));
+    // Merge settings con default per garantire stagioni/listino presenti
+    const loaded = settingsSnap.exists()?settingsSnap.data():{};
+    settings = mergeSettings(loaded);
+
+    ctrCounter = ctrSnap.exists()?(ctrSnap.data().value||1):1;
 
     showSync('Sincronizzato');
     DAYS=getDays(curYear);
@@ -103,6 +101,25 @@ async function fbLoadAll(){
   }
 }
 window._fbLoadAll=fbLoadAll;
+
+function mergeSettings(s){
+  const out=JSON.parse(JSON.stringify(DEFAULT_SETTINGS));
+  ['agency','address','phone','email','piva','foro','clauses'].forEach(k=>{if(s[k]!==undefined)out[k]=s[k]});
+  if(s.stagioni){
+    if(s.stagioni.alta){out.stagioni.alta={from:s.stagioni.alta.from||out.stagioni.alta.from,to:s.stagioni.alta.to||out.stagioni.alta.to}}
+    if(s.stagioni.media){out.stagioni.media={from:s.stagioni.media.from||out.stagioni.media.from,to:s.stagioni.media.to||out.stagioni.media.to}}
+  }
+  if(s.listino){
+    CATEGORIES.forEach(([cat])=>{
+      if(s.listino[cat]){
+        SEASONS.forEach(sg=>{
+          if(s.listino[cat][sg]!==undefined)out.listino[cat][sg]=Number(s.listino[cat][sg])||0;
+        });
+      }
+    });
+  }
+  return out;
+}
 
 function showSync(msg,type=''){
   const el=document.getElementById('syncLabel');
@@ -148,27 +165,76 @@ function doLogout(){
 // ---
 function dk(d){return`${d.getFullYear()}-${p2(d.getMonth()+1)}-${p2(d.getDate())}`}
 function p2(n){return String(n).padStart(2,'0')}
-function fd(s){if(!s||s==='—')return'—';if(s.includes('-')){const[y,m,d]=s.split('-');return`${d}/${m}/${y}`}return s}
+function fd(s){if(!s||s==='—')return'—';if(typeof s==='string' && s.includes('-')){const[y,m,d]=s.split('-');return`${d}/${m}/${y}`}return s}
 function getDays(yr){const a=[];const d=new Date(yr,0,1);while(d.getFullYear()===yr){a.push(new Date(d));d.setDate(d.getDate()+1)}return a}
 function dIdx(key){return DAYS.findIndex(d=>dk(d)===key)}
 
 // ---
+// STAGIONE / PREZZO
+// ---
+function getStagione(dateKey){
+  if(!dateKey)return 'bassa';
+  const md=dateKey.substring(5); // MM-DD
+  const s=settings.stagioni||DEFAULT_SETTINGS.stagioni;
+  // Gestisce intervalli che attraversano l'anno (es. alta 12-15 -> 01-10)
+  const inRange=(val,from,to)=>{
+    if(!from||!to)return false;
+    if(from<=to) return val>=from && val<=to;
+    return val>=from || val<=to;
+  };
+  if(s.alta && inRange(md,s.alta.from,s.alta.to))return 'alta';
+  if(s.media && inRange(md,s.media.from,s.media.to))return 'media';
+  return 'bassa';
+}
+
+function getPrezzoSuggerito(cat,dateKey){
+  if(!cat)return 0;
+  const st=getStagione(dateKey);
+  const l=settings.listino||{};
+  return (l[cat] && l[cat][st]) || 0;
+}
+
+function catLabel(c){
+  const f=CATEGORIES.find(x=>x[0]===c);
+  return f?`${f[0]} — ${f[1]}`:'—';
+}
+
+// ---
 // NAVIGATION
 // ---
-function getStagione(dk){if(!dk)return"bassa";const md=dk.substring(5);const s=settings.stagioni||{alta:{from:"07-01",to:"08-31"},media:{from:"06-01",to:"06-30"}};if(md>=s.alta.from&&md<=s.alta.to)return"alta";if(s.media&&md>=s.media.from&&md<=s.media.to)return"media";return"bassa";}
-function getPrezzoSuggerito(cat,dk){const st=getStagione(dk);const l=settings.listino||{};return(l[cat]&&l[cat][st])||0;}
+function changeYear(d){
+  curYear+=d;
+  document.getElementById('yearVal').textContent=curYear;
+  DAYS=getDays(curYear);
+  buildTable();
+  // Aggiorno filtri lista solo se la pagina è attiva
+  if(document.getElementById('page-list').classList.contains('active')){
+    populateListFilters();
+    renderList();
+  }
+  if(document.getElementById('page-stats').classList.contains('active')) renderStats();
+}
 
-function changeYear(d){curYear+=d;document.getElementById('yearVal').textContent=curYear;DAYS=getDays(curYear);buildTable();populateListFilters()}
 function showPage(id,btn){
   document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
   document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
-  document.getElementById('page-'+id).classList.add('active');
+  const pg=document.getElementById('page-'+id);
+  if(pg)pg.classList.add('active');
   if(btn)btn.classList.add('active');
+  else{
+    const t=document.querySelector(`.tab[data-page="${id}"]`);
+    if(t)t.classList.add('active');
+  }
   if(id==='list'){populateListFilters();renderList()}
   else if(id==='stats')renderStats();
   else if(id==='clients')renderClients();
   else if(id==='fleet')renderFleet();
   else if(id==='settings')loadSettings();
+}
+
+function goToFleet(){
+  const t=document.querySelector('.tab[data-page="fleet"]');
+  showPage('fleet',t);
 }
 
 // ---
@@ -177,7 +243,9 @@ function showPage(id,btn){
 function buildTable(){
   DAYS=getDays(curYear);
   const t=document.getElementById('ptable');
+  if(!t)return;
   t.innerHTML='';
+
   const trM=document.createElement('tr');
   const th0=document.createElement('th'); th0.className='car-hdr mhdr'; trM.appendChild(th0);
   let mi=-1;
@@ -192,6 +260,7 @@ function buildTable(){
     }
   });
   t.appendChild(trM);
+
   const trD=document.createElement('tr');
   const th1=document.createElement('th'); th1.className='car-hdr dhdr'; th1.style.top='22px'; trD.appendChild(th1);
   DAYS.forEach((day,i)=>{
@@ -203,11 +272,15 @@ function buildTable(){
     th.textContent=day.getDate(); trD.appendChild(th);
   });
   t.appendChild(trD);
+
   cars.forEach(car=>{
     const tr=document.createElement('tr'); tr.dataset.cid=car.id;
     const tdC=document.createElement('td'); tdC.className='car-cell';
     const expW=getCarExpiry(car);
-    tdC.innerHTML=`<div class="car-targa" style="color:${car.color||'var(--accent)'}">${car.targa}</div><div class="car-model">${car.model}</div>${expW?`<div class="car-exp">${expW}</div>`:''}`;
+    const catLine=car.cat?`<div class="car-cat">CAT ${car.cat}</div>`:'';
+    tdC.innerHTML=`<div class="car-targa" style="color:${car.color||'var(--accent)'}">${car.targa}</div><div class="car-model">${car.model||''}</div>${catLine}${expW?`<div class="car-exp">${expW}</div>`:''}`;
+    tdC.onclick=()=>openCarEditModal(car.id);
+    tdC.style.cursor='pointer';
     tr.appendChild(tdC);
     DAYS.forEach((day,i)=>{
       const td=document.createElement('td');
@@ -237,6 +310,7 @@ function getCarExpiry(car){
   if(car.rev){if(car.rev<=today)warns.push('🔴Rev.');else if(car.rev<=in30)warns.push('🟠Rev.');}
   return warns.join(' ');
 }
+
 function checkAlerts(){
   const today=dk(TODAY), in30=dk(new Date(TODAY.getTime()+30*86400000));
   const warns=[];
@@ -248,14 +322,18 @@ function checkAlerts(){
     });
   });
   const banner=document.getElementById('alertBanner');
+  if(!banner)return;
   if(warns.length){document.getElementById('alertText').textContent=warns.join(' · ');banner.classList.add('show');}
   else{banner.classList.remove('show');}
 }
+
 function scrollToToday(){
   const idx=DAYS.findIndex(d=>dk(d)===dk(TODAY)); if(idx<0)return;
   const w=document.getElementById('planWrap');
+  if(!w)return;
   w.scrollLeft=Math.max(0,(idx*28)+185-w.clientWidth/2);
 }
+
 function renderBars(){
   document.querySelectorAll('.rbar').forEach(b=>b.remove());
   rentals.forEach(r=>{
@@ -265,6 +343,7 @@ function renderBars(){
     renderBar(r);
   });
 }
+
 function renderBar(r){
   const si=DAYS.findIndex(d=>dk(d)===r.startKey);
   const ei=DAYS.findIndex(d=>dk(d)===r.endKey);
@@ -289,11 +368,11 @@ function renderBar(r){
     }
     bar.addEventListener('click',e=>{e.stopPropagation();openEditRental(r.id)});
     bar.title=(r.cognome||'')+(r.nome?' '+r.nome:'')+' | '+fd(r.startKey)+' → '+fd(r.endKey);
-  if(new Date(r.endKey)<TODAY){bar.style.opacity='0.4';bar.style.filter='grayscale(40%)';}  
-  c0.appendChild(bar); seg=se+1;
+    if(new Date(r.endKey)<TODAY){bar.style.opacity='0.4';bar.style.filter='grayscale(40%)';}
+    c0.appendChild(bar); seg=se+1;
   }
 }
-let dragScrolling=false;
+
 function onMD(e){
   if(e.button!==0)return;
   const td=e.currentTarget;
@@ -315,13 +394,15 @@ function onMU(e){
   openNewRental(cid,si,ei);
 }
 document.addEventListener('mouseup',()=>{if(drag){clearHilite();drag=null;}});
-// Touch drag per mobile
+
 function onTouchStart(e){const td=e.currentTarget;drag={cid:td.dataset.cid,si:+td.dataset.di,ei:+td.dataset.di};hilite();}
 function onTouchMove(e){if(!drag)return;e.preventDefault();const t=e.touches[0];const el=document.elementFromPoint(t.clientX,t.clientY);if(el&&el.dataset&&el.dataset.di&&el.dataset.cid===drag.cid){drag.ei=+el.dataset.di;hilite();}}
 function onTouchEnd(e){if(!drag)return;clearHilite();const si=Math.min(drag.si,drag.ei),ei=Math.max(drag.si,drag.ei);const cid=drag.cid;drag=null;openNewRental(cid,si,ei);}
 document.addEventListener('touchend',()=>{if(drag){clearHilite();drag=null;}});
+
 function hilite(){clearHilite();if(!drag)return;const si=Math.min(drag.si,drag.ei),ei=Math.max(drag.si,drag.ei);const row=document.querySelector(`tr[data-cid="${drag.cid}"]`);if(!row)return;row.querySelectorAll('td.dcell').forEach(td=>{const i=+td.dataset.di;if(i>=si&&i<=ei)td.classList.add('sel')})}
 function clearHilite(){document.querySelectorAll('.dcell.sel').forEach(td=>td.classList.remove('sel'))}
+
 function checkAvail(){
   const from=document.getElementById('availFrom').value;
   const to=document.getElementById('availTo').value;
@@ -338,7 +419,8 @@ function checkAvail(){
 // RENTAL MODAL
 // ---
 function buildColorPick(pid,colors,current,onSel){
-  const cp=document.getElementById(pid); cp.innerHTML='';
+  const cp=document.getElementById(pid); if(!cp)return;
+  cp.innerHTML='';
   colors.forEach(c=>{
     const el=document.createElement('div');
     el.className='cswatch'+(c===current?' on':''); el.style.background=c;
@@ -346,11 +428,12 @@ function buildColorPick(pid,colors,current,onSel){
     cp.appendChild(el);
   });
 }
+
 function openNewRental(cid,si,ei){
   const car=cars.find(c=>c.id===cid); if(!car)return;
   curRid=null; curCid=cid; curSi=si; curEi=ei;
   document.getElementById('mRentalTitle').textContent='Nuovo Noleggio';
-  document.getElementById('mRentalSub').textContent=`${car.targa} — ${car.model}`;
+  document.getElementById('mRentalSub').textContent=`${car.targa} — ${car.model||''}`;
   setRO(si,ei); checkConflict(cid,si,ei,null);
   const fields=['f_km','f_km_r','f_fuel','f_clean','f_tipo','f_cognome','f_nome','f_cf','f_indirizzo','f_tel','f_email','f_pat','f_pat_r','f_pat_s','f_a_cog','f_a_nom','f_a_pat','f_a_sca','f_prezzo','f_sp','f_se','f_cau','f_acconto','f_pag','f_d_carr','f_d_vetri','f_d_int','f_d_cer','f_d_note','f_r_carr','f_r_vetri','f_r_fuel','f_r_clean','f_r_note','f_pen','f_note'];
   fields.forEach(id=>{const el=document.getElementById(id);if(el)el.value=''});
@@ -361,10 +444,33 @@ function openNewRental(cid,si,ei){
   document.getElementById('btnDel').style.display='none';
   document.getElementById('clientLookup').value='';
   document.getElementById('clientSuggest').innerHTML='';
+
+  // Suggerimento prezzo automatico in base a categoria auto + stagione
+  applyPrezzoSuggerito(car,dk(DAYS[si]));
+
   selColor=car.color||RCOLS[rentals.length%RCOLS.length];
   buildColorPick('colorPick',RCOLS,selColor,c=>selColor=c);
   document.getElementById('mRental').classList.add('open');
+  calcTot();
 }
+
+function applyPrezzoSuggerito(car,dateKey){
+  const sg=document.getElementById('suggestPrice');
+  const inp=document.getElementById('f_prezzo');
+  if(!car || !car.cat){
+    if(sg)sg.textContent=car?'(nessuna categoria assegnata all\'auto)':'';
+    return;
+  }
+  const price=getPrezzoSuggerito(car.cat,dateKey);
+  const season=getStagione(dateKey);
+  if(price>0){
+    if(inp && !inp.value) inp.value=price;
+    if(sg)sg.innerHTML=`Suggerito: <strong style="color:var(--accent)">€${price}/gg</strong> · Cat. ${car.cat} · Stagione ${season}`;
+  } else {
+    if(sg)sg.textContent=`(nessuna tariffa impostata per cat. ${car.cat} stagione ${season})`;
+  }
+}
+
 function openEditRental(rid){
   const r=rentals.find(x=>x.id===rid); if(!r)return;
   const car=cars.find(c=>c.id===r.carId);
@@ -372,11 +478,23 @@ function openEditRental(rid){
   curSi=dIdx(r.startKey); curEi=dIdx(r.endKey);
   if(curSi<0)curSi=0; if(curEi<0)curEi=DAYS.length-1;
   document.getElementById('mRentalTitle').textContent='Modifica Noleggio';
-  document.getElementById('mRentalSub').textContent=car?`${car.targa} — ${car.model}`:'';
+  document.getElementById('mRentalSub').textContent=car?`${car.targa} — ${car.model||''}`:'';
   setRO(curSi,curEi); checkConflict(r.carId,curSi,curEi,rid);
   const s=(id,v)=>{const el=document.getElementById(id);if(el)el.value=v||''};
   s('f_km',r.km);s('f_km_r',r.kmR);s('f_fuel',r.fuel);s('f_clean',r.clean);s('f_tipo',r.tipo);s('f_cognome',r.cognome);s('f_nome',r.nome);s('f_cf',r.cf);s('f_indirizzo',r.indirizzo);s('f_tel',r.tel);s('f_email',r.email);s('f_pat',r.pat);s('f_pat_r',r.patR);s('f_pat_s',r.patS);s('f_a_cog',r.aCog);s('f_a_nom',r.aNom);s('f_a_pat',r.aPat);s('f_a_sca',r.aSca);s('f_prezzo',r.prezzo);s('f_sp',r.sp);s('f_se',r.se);s('f_cau',r.cau);s('f_acconto',r.acconto);s('f_pag',r.pag);s('f_d_carr',r.dCarr);s('f_d_vetri',r.dVetri);s('f_d_int',r.dInt);s('f_d_cer',r.dCer);s('f_d_note',r.dNote);s('f_r_carr',r.rCarr);s('f_r_vetri',r.rVetri);s('f_r_fuel',r.rFuel);s('f_r_clean',r.rClean);s('f_r_note',r.rNote);s('f_pen',r.pen);s('f_stato',r.stato||'noleggio');s('f_note',r.note);
   document.getElementById('f_pay_status').value=r.payStatus||'nonpagato';
+
+  // Aggiorno suggerimento prezzo (solo info, non sovrascrivo)
+  if(car){
+    const sg=document.getElementById('suggestPrice');
+    if(car.cat){
+      const p=getPrezzoSuggerito(car.cat,r.startKey);
+      const season=getStagione(r.startKey);
+      if(p>0 && sg)sg.innerHTML=`Tariffario: €${p}/gg · Cat. ${car.cat} · Stagione ${season}`;
+      else if(sg)sg.textContent='';
+    } else if(sg) sg.textContent='';
+  }
+
   selColor=r.color||RCOLS[0];
   buildColorPick('colorPick',RCOLS,selColor,c=>selColor=c);
   calcTot();
@@ -385,22 +503,49 @@ function openEditRental(rid){
   document.getElementById('clientSuggest').innerHTML='';
   document.getElementById('mRental').classList.add('open');
 }
+
 function setRO(si,ei){
   const sk=dk(DAYS[si]);const ek=dk(DAYS[ei]);
   const sIn=document.getElementById('dStart');const eIn=document.getElementById('dEnd');
   if(sIn)sIn.value=sk;if(eIn)eIn.value=ek;
   updateDaysCount();
-  const car=cars.find(c=>c.id===curCid)||{targa:'—',model:'—'};
+  const car=cars.find(c=>c.id===curCid)||{targa:'—',model:'—',cat:''};
   document.getElementById('dTarga').textContent=car.targa;
-  document.getElementById('dModello').textContent=car.model;
+  document.getElementById('dModello').textContent=car.model||'—';
+  document.getElementById('dCategoria').textContent=car.cat?catLabel(car.cat):'—';
 }
+
 function updateDaysCount(){
-  const sv=document.getElementById('dStart')?.value;const ev=document.getElementById('dEnd')?.value;
+  const sv=document.getElementById('dStart')?.value;
+  const ev=document.getElementById('dEnd')?.value;
   if(!sv||!ev)return;
-  const si=DAYS.findIndex(d=>dk(d)===sv);const ei=DAYS.findIndex(d=>dk(d)===ev);
-  if(si>=0&&ei>=0&&ei>=si){curSi=si;curEi=ei;document.getElementById('dDays').textContent=(ei-si+1)+' gg';checkConflict(curCid,si,ei,curRid);const stag=getStagione(sv);const sEl=document.getElementById('dStagione');if(sEl){const cols={alta:'#ef4444',media:'#f59e0b',bassa:'#10b981'};sEl.textContent='● Stagione '+stag.toUpperCase();sEl.style.color=cols[stag]||'var(--text2)';}calcTot();}
-  else document.getElementById('dDays').textContent='—';
+  const si=DAYS.findIndex(d=>dk(d)===sv);
+  const ei=DAYS.findIndex(d=>dk(d)===ev);
+  if(si>=0&&ei>=0&&ei>=si){
+    curSi=si;curEi=ei;
+    document.getElementById('dDays').textContent=(ei-si+1)+' gg';
+    checkConflict(curCid,si,ei,curRid);
+    const stag=getStagione(sv);
+    const sEl=document.getElementById('dStagione');
+    if(sEl){
+      sEl.textContent='Stagione '+stag.toUpperCase();
+      sEl.style.background=SEASON_COLORS[stag]+'33';
+      sEl.style.color=SEASON_COLORS[stag];
+    }
+    // Aggiorna info suggerimento (senza sovrascrivere il prezzo già inserito)
+    const car=cars.find(c=>c.id===curCid);
+    if(car){
+      const sg=document.getElementById('suggestPrice');
+      if(car.cat){
+        const p=getPrezzoSuggerito(car.cat,sv);
+        if(sg && p>0) sg.innerHTML=`Suggerito: <strong style="color:var(--accent)">€${p}/gg</strong> · Cat. ${car.cat} · Stagione ${stag}`;
+        else if(sg) sg.textContent=`(nessuna tariffa per cat. ${car.cat} stagione ${stag})`;
+      }
+    }
+    calcTot();
+  } else document.getElementById('dDays').textContent='—';
 }
+
 function checkConflict(cid,si,ei,xid){
   const c=rentals.some(r=>{
     if(r.id===xid||r.carId!==cid)return false;
@@ -408,13 +553,16 @@ function checkConflict(cid,si,ei,xid){
     return!(ei<rsi||si>rei);
   });
   const w=document.getElementById('conflictWarn');
-  w.className='conflict'+(c?' show':'');
+  if(w)w.className='conflict'+(c?' show':'');
 }
+
 function gv(id){const el=document.getElementById(id);return el?el.value.trim():''}
+
 function saveRental(){
   const _sk=document.getElementById('dStart')?.value||dk(DAYS[curSi]);
   const _ek=document.getElementById('dEnd')?.value||dk(DAYS[curEi]);
-  const _siF=DAYS.findIndex(d=>dk(d)===_sk);const _eiF=DAYS.findIndex(d=>dk(d)===_ek);
+  const _siF=DAYS.findIndex(d=>dk(d)===_sk);
+  const _eiF=DAYS.findIndex(d=>dk(d)===_ek);
   const _si=_siF>=0?_siF:curSi,_ei=_eiF>=0?_eiF:curEi;curSi=_si;curEi=_ei;
   const days=Math.max(1,_ei-_si+1);
   const p=parseFloat(gv('f_prezzo'))||0;
@@ -436,7 +584,9 @@ function saveRental(){
     aCog:gv('f_a_cog'), aNom:gv('f_a_nom'), aPat:gv('f_a_pat'), aSca:gv('f_a_sca'),
     prezzo:gv('f_prezzo'), sp:gv('f_sp'), se:gv('f_se'), cau:gv('f_cau'),
     acconto:gv('f_acconto'), pag:gv('f_pag'), pen:gv('f_pen'),
-    totale:p?tot.toFixed(2):'', saldo:p?saldo.toFixed(2):'',
+    // Salvo come numeri per evitare bug nei toFixed
+    totale: p? +tot.toFixed(2) : 0,
+    saldo:  p? +saldo.toFixed(2) : 0,
     dCarr:gv('f_d_carr'), dVetri:gv('f_d_vetri'), dInt:gv('f_d_int'), dCer:gv('f_d_cer'), dNote:gv('f_d_note'),
     rCarr:gv('f_r_carr'), rVetri:gv('f_r_vetri'), rFuel:gv('f_r_fuel'), rClean:gv('f_r_clean'), rNote:gv('f_r_note'),
     note:gv('f_note'),
@@ -445,19 +595,22 @@ function saveRental(){
   if(curRid){const i=rentals.findIndex(x=>x.id===curRid);if(i>=0)rentals[i]=r;}
   else rentals.push(r);
   fbSet('rentals',r.id,r);
-  // Crea/aggiorna cliente automaticamente se ha almeno cognome o nome
+
+  // Crea/aggiorna cliente automaticamente se ha almeno cognome
   if(r.cognome||r.nome){
     const existingClient = clients.find(c=>
-      c.cf&&r.cf&&c.cf.toUpperCase()===r.cf.toUpperCase() ||
+      (c.cf && r.cf && c.cf.toUpperCase()===r.cf.toUpperCase()) ||
       (c.cognome===r.cognome && c.nome===r.nome && r.cognome)
     );
     if(!existingClient){
       const newClient={
         id:'cl'+Date.now(),
+        tipo:r.tipo||'',
         cognome:r.cognome||'',
         nome:r.nome||'',
         cf:r.cf||'',
-        patente:r.patente||'',
+        pat:r.pat||'',
+        patS:r.patS||'',
         indirizzo:r.indirizzo||'',
         tel:r.tel||'',
         email:r.email||'',
@@ -466,15 +619,17 @@ function saveRental(){
       clients.push(newClient);
       fbSet('clients',newClient.id,newClient);
     } else {
-      // Aggiorna campi vuoti con quelli nuovi
       let updated=false;
-      ['cf','patente','indirizzo','tel','email'].forEach(f=>{if(!existingClient[f]&&r[f]){existingClient[f]=r[f];updated=true;}});
+      ['cf','pat','patS','indirizzo','tel','email','tipo'].forEach(f=>{
+        if(!existingClient[f]&&r[f]){existingClient[f]=r[f];updated=true;}
+      });
       if(updated) fbSet('clients',existingClient.id,existingClient);
     }
-  };
+  }
   showSync('Salvato ✓');
   closeM('mRental'); buildTable(); toast('Noleggio salvato ✓');
 }
+
 async function deleteRental(){
   if(!curRid||!confirm("Eliminare questo noleggio?"))return;
   rentals=rentals.filter(r=>r.id!==curRid);
@@ -482,11 +637,12 @@ async function deleteRental(){
   showSync('Eliminato');
   closeM('mRental'); buildTable(); toast('Eliminato');
 }
+
 function calcTot(){
-  const days=curEi!==null?(curEi-curSi+1):0;
+  const days=(curSi!==null && curEi!==null)?(curEi-curSi+1):0;
   const p=parseFloat(gv('f_prezzo'))||0;
   const sp=parseFloat(gv('f_sp'))||0, se2=parseFloat(gv('f_se'))||0;
-  if(!p){document.getElementById('pcalc').style.display='none';document.getElementById('saldoDisplay').textContent='—';return}
+  if(!p||!days){document.getElementById('pcalc').style.display='none';document.getElementById('saldoDisplay').textContent='—';return}
   const base=days*p, sc=se2>0?se2:base*sp/100, net=base-sc, iva=net*.22, tot=net+iva;
   const acconto=parseFloat(gv('f_acconto'))||0, pen=parseFloat(gv('f_pen'))||0, saldo=tot+pen-acconto;
   document.getElementById('pcalc').style.display='block';
@@ -496,6 +652,7 @@ function calcTot(){
   document.getElementById('pc_tot').textContent=`€ ${tot.toFixed(2)}`;
   document.getElementById('saldoDisplay').textContent=`€ ${saldo.toFixed(2)}`;
 }
+
 function clientAutocomplete(){
   const q=document.getElementById('clientLookup').value.toLowerCase();
   const box=document.getElementById('clientSuggest');
@@ -504,6 +661,7 @@ function clientAutocomplete(){
   if(!matches.length){box.innerHTML='';return}
   box.innerHTML=`<div class="suggest-box">${matches.map(c=>`<div class="suggest-item" onmousedown="fillClient('${c.id}')">${c.cognome||''} ${c.nome||''} <span style="color:var(--text3);font-size:10px">${c.cf||''}</span></div>`).join('')}</div>`;
 }
+
 function fillClient(cid){
   const c=clients.find(x=>x.id===cid); if(!c)return;
   const s=(id,v)=>{const el=document.getElementById(id);if(el)el.value=v||''};
@@ -511,6 +669,7 @@ function fillClient(cid){
   document.getElementById('clientLookup').value=`${c.cognome||''} ${c.nome||''}`.trim();
   document.getElementById('clientSuggest').innerHTML='';
 }
+
 function clearClientFields(){
   ['f_tipo','f_cognome','f_nome','f_cf','f_indirizzo','f_tel','f_email','f_pat','f_pat_r','f_pat_s'].forEach(id=>{const el=document.getElementById(id);if(el)el.value=''});
   document.getElementById('clientLookup').value=''; document.getElementById('clientSuggest').innerHTML='';
@@ -534,29 +693,29 @@ function printContract(){
   const kmPerc=(gv('f_km')&&gv('f_km_r'))?(parseInt(gv('f_km_r'))-parseInt(gv('f_km')))+' km':'—';
   function row(l,v,full=false){return`<div class="pf${full?' full':''}"><div class="pfl">${l}</div><div class="pfv">${v||'—'}</div></div>`}
   const html=`<div class="pdoc">
-  <div class="p-hdr"><div><div class="p-agency">${ag}</div>${settings.address?`<div style="font-size:8pt;color:#555">${settings.address}</div>`:''}${settings.phone||settings.email?`<div style="font-size:8pt;color:#555">${[settings.phone,settings.email].filter(Boolean).join(' · ')}</div>`:''}${settings.piva?`<div style="font-size:8pt;color:#555">P.IVA: ${settings.piva}</div>`:''}</div><div style="text-align:right"><div style="font-size:11pt;font-weight:bold;color:#0f1f3d">${ctrStr}</div><div style="font-size:8.5pt;color:#555">Data: ${fd(dk(TODAY))}</div></div></div>
-  <div class="p-title">Contratto di Noleggio Veicolo</div>
-  <div class="p-sec"><div class="p-sec-t">1. Dati Conduttore</div><div class="pgrid">${row('Cognome',gv('f_cognome'))}${row('Nome',gv('f_nome'))}${row('C.F./P.IVA',gv('f_cf'))}${row('Tipo',gv('f_tipo'))}${row('Indirizzo',gv('f_indirizzo'),true)}${row('Telefono',gv('f_tel'))}${row('Email',gv('f_email'))}${row('N° Patente',gv('f_pat'))}${row('Rilascio',fd(gv('f_pat_r')))}${row('Scadenza pat.',fd(gv('f_pat_s')))}</div></div>
-  ${hasAgg?`<div class="p-sec"><div class="p-sec-t">2. Conducente Aggiuntivo</div><div class="pgrid">${row('Cognome',gv('f_a_cog'))}${row('Nome',gv('f_a_nom'))}${row('N° Patente',gv('f_a_pat'))}${row('Scadenza',fd(gv('f_a_sca')))}</div></div>`:''}
-  <div class="p-sec"><div class="p-sec-t">${hasAgg?'3':'2'}. Veicolo</div><div class="pgrid t3">${row('Targa',car?car.targa:'—')}${row('Modello',car?car.model:'—')}${row('KM cons.',gv('f_km')||'—')}${row('KM resa',gv('f_km_r')||'—')}${row('KM percorsi',kmPerc)}${row('Carburante',gv('f_fuel'))}${row('Pulizia cons.',gv('f_clean'))}${row('Carb. reso',gv('f_r_fuel'))}${row('Pulizia resa',gv('f_r_clean'))}</div>
-  <div style="font-size:8pt;margin-top:4px"><strong>Danni consegna:</strong> Carr.=${gv('f_d_carr')||'—'} · Vetri=${gv('f_d_vetri')||'—'} · Int.=${gv('f_d_int')||'—'} · Cerchi=${gv('f_d_cer')||'—'}${gv('f_d_note')?' · '+gv('f_d_note'):''}</div>
-  ${(gv('f_r_carr')||gv('f_r_note'))?`<div style="font-size:8pt;margin-top:2px"><strong>Restituzione:</strong> Carr.=${gv('f_r_carr')||'—'} · Vetri=${gv('f_r_vetri')||'—'}${gv('f_r_note')?' · '+gv('f_r_note'):''}</div>`:''}</div>
-  <div class="p-sec"><div class="p-sec-t">${hasAgg?'4':'3'}. Periodo e Corrispettivo</div><div class="pgrid t3">${row('Data inizio',fd(dk(si)))}${row('Data fine',fd(dk(ei)))}${row('N° giorni',days)}${row('Prezzo/giorno',p?`€ ${p.toFixed(2)}`:'—')}${row('Sconto',sc>0?`€ ${sc.toFixed(2)}`:'—')}${row('IVA 22%',p?`€ ${iva.toFixed(2)}`:'—')}</div>${p?`<div class="p-tot"><strong>TOTALE IVA INCLUSA</strong><strong style="font-size:13pt;color:#0f1f3d">€ ${tot.toFixed(2)}</strong></div>`:''}</div>
-  <div class="p-sec"><div class="p-sec-t">${hasAgg?'5':'4'}. Pagamento e Cauzione</div><div class="pgrid">${row('Metodo',gv('f_pag'))}${row('Cauzione',gv('f_cau')?`€ ${parseFloat(gv('f_cau')).toFixed(2)}`:'—')}${row('Acconto',acconto?`€ ${acconto.toFixed(2)}`:'—')}${row('Saldo residuo',p?`€ ${saldo.toFixed(2)}`:'—')}${row('Stato pagamento',gv('f_pay_status'))}</div></div>
-  ${gv('f_note')?`<div class="p-sec"><div class="p-sec-t">Note</div><div style="border:1px solid #ccc;padding:6px;font-size:9pt">${gv('f_note')}</div></div>`:''}
-  <div class="p-sec"><div class="p-sec-t">${hasAgg?'6':'5'}. Condizioni Generali</div><div class="p-clauses">
-    <div class="p-ct">Art.1 — Consegna e restituzione</div><div>Il veicolo viene consegnato nelle condizioni descritte nel presente verbale. La restituzione deve avvenire entro la data stabilita, nelle medesime condizioni.</div>
-    <div class="p-ct">Art.2 — Uso del veicolo</div><div>Il veicolo deve essere utilizzato esclusivamente dal conduttore autorizzato. È vietato l'uso per gare, competizioni, trasporto a pagamento o attività illecite.</div>
-    <div class="p-ct">Art.3 — Carburante</div><div>La restituzione deve avvenire con lo stesso livello di carburante della consegna. Il carburante mancante sarà addebitato con maggiorazione di servizio.</div>
-    <div class="p-ct">Art.4 — Responsabilità danni</div><div>Il conduttore è responsabile di tutti i danni al veicolo e a terzi durante il periodo di noleggio. La cauzione sarà trattenuta in caso di danni o inadempienze contrattuali.</div>
-    <div class="p-ct">Art.5 — Penali per ritardo</div><div>In caso di restituzione tardiva verrà addebitata una penale pari al doppio del canone giornaliero per ogni giorno o frazione di giorno di ritardo.</div>
-    <div class="p-ct">Art.6 — Sinistri</div><div>In caso di sinistro il conduttore è tenuto a: non abbandonare il veicolo, raccogliere i dati dei terzi, compilare il modulo CID e contattare immediatamente l'agenzia.</div>
-    <div class="p-ct">Art.7 — Foro competente</div><div>Per qualsiasi controversia le parti eleggono come foro competente ${settings.foro?'il Tribunale di '+settings.foro:"quello del luogo in cui ha sede l'agenzia locatrice"}.</div>
-    ${settings.clauses?`<div class="p-ct">Clausole aggiuntive</div><div>${settings.clauses}</div>`:''}
-  </div></div>
-  <div class="p-sigs"><div><div class="p-sig-line"></div><div class="p-sig-lbl"><strong>${ag}</strong><br>Firma e timbro</div></div><div><div class="p-sig-line"></div><div class="p-sig-lbl"><strong>IL CONDUTTORE</strong><br>${gv('f_cognome')||'___________'} ${gv('f_nome')||''}<br>Firma per accettazione</div></div></div>
-  <div style="text-align:center;font-size:7.5pt;color:#777;margin-top:10px">Il conduttore dichiara di aver letto e accettato integralmente le condizioni generali di noleggio. | ${ctrStr} | ${fd(dk(TODAY))}</div>
-  </div>`;
+<div class="p-hdr"><div><div class="p-agency">${ag}</div>${settings.address?`<div style="font-size:8pt;color:#555">${settings.address}</div>`:''}${settings.phone||settings.email?`<div style="font-size:8pt;color:#555">${[settings.phone,settings.email].filter(Boolean).join(' · ')}</div>`:''}${settings.piva?`<div style="font-size:8pt;color:#555">P.IVA: ${settings.piva}</div>`:''}</div><div style="text-align:right"><div style="font-size:11pt;font-weight:bold;color:#0f1f3d">${ctrStr}</div><div style="font-size:8.5pt;color:#555">Data: ${fd(dk(TODAY))}</div></div></div>
+<div class="p-title">Contratto di Noleggio Veicolo</div>
+<div class="p-sec"><div class="p-sec-t">1. Dati Conduttore</div><div class="pgrid">${row('Cognome',gv('f_cognome'))}${row('Nome',gv('f_nome'))}${row('C.F./P.IVA',gv('f_cf'))}${row('Tipo',gv('f_tipo'))}${row('Indirizzo',gv('f_indirizzo'),true)}${row('Telefono',gv('f_tel'))}${row('Email',gv('f_email'))}${row('N° Patente',gv('f_pat'))}${row('Rilascio',fd(gv('f_pat_r')))}${row('Scadenza pat.',fd(gv('f_pat_s')))}</div></div>
+${hasAgg?`<div class="p-sec"><div class="p-sec-t">2. Conducente Aggiuntivo</div><div class="pgrid">${row('Cognome',gv('f_a_cog'))}${row('Nome',gv('f_a_nom'))}${row('N° Patente',gv('f_a_pat'))}${row('Scadenza',fd(gv('f_a_sca')))}</div></div>`:''}
+<div class="p-sec"><div class="p-sec-t">${hasAgg?'3':'2'}. Veicolo</div><div class="pgrid t3">${row('Targa',car?car.targa:'—')}${row('Modello',car?car.model:'—')}${row('Categoria',car&&car.cat?car.cat:'—')}${row('KM cons.',gv('f_km')||'—')}${row('KM resa',gv('f_km_r')||'—')}${row('KM percorsi',kmPerc)}${row('Carburante',gv('f_fuel'))}${row('Pulizia cons.',gv('f_clean'))}${row('Carb. reso',gv('f_r_fuel'))}${row('Pulizia resa',gv('f_r_clean'))}</div>
+<div style="font-size:8pt;margin-top:4px"><strong>Danni consegna:</strong> Carr.=${gv('f_d_carr')||'—'} · Vetri=${gv('f_d_vetri')||'—'} · Int.=${gv('f_d_int')||'—'} · Cerchi=${gv('f_d_cer')||'—'}${gv('f_d_note')?' · '+gv('f_d_note'):''}</div>
+${(gv('f_r_carr')||gv('f_r_note'))?`<div style="font-size:8pt;margin-top:2px"><strong>Restituzione:</strong> Carr.=${gv('f_r_carr')||'—'} · Vetri=${gv('f_r_vetri')||'—'}${gv('f_r_note')?' · '+gv('f_r_note'):''}</div>`:''}</div>
+<div class="p-sec"><div class="p-sec-t">${hasAgg?'4':'3'}. Periodo e Corrispettivo</div><div class="pgrid t3">${row('Data inizio',fd(dk(si)))}${row('Data fine',fd(dk(ei)))}${row('N° giorni',days)}${row('Prezzo/giorno',p?`€ ${p.toFixed(2)}`:'—')}${row('Sconto',sc>0?`€ ${sc.toFixed(2)}`:'—')}${row('IVA 22%',p?`€ ${iva.toFixed(2)}`:'—')}</div>${p?`<div class="p-tot"><strong>TOTALE IVA INCLUSA</strong><strong style="font-size:13pt;color:#0f1f3d">€ ${tot.toFixed(2)}</strong></div>`:''}</div>
+<div class="p-sec"><div class="p-sec-t">${hasAgg?'5':'4'}. Pagamento e Cauzione</div><div class="pgrid">${row('Metodo',gv('f_pag'))}${row('Cauzione',gv('f_cau')?`€ ${parseFloat(gv('f_cau')).toFixed(2)}`:'—')}${row('Acconto',acconto?`€ ${acconto.toFixed(2)}`:'—')}${row('Saldo residuo',p?`€ ${saldo.toFixed(2)}`:'—')}${row('Stato pagamento',gv('f_pay_status'))}</div></div>
+${gv('f_note')?`<div class="p-sec"><div class="p-sec-t">Note</div><div style="border:1px solid #ccc;padding:6px;font-size:9pt">${gv('f_note')}</div></div>`:''}
+<div class="p-sec"><div class="p-sec-t">${hasAgg?'6':'5'}. Condizioni Generali</div><div class="p-clauses">
+<div class="p-ct">Art.1 — Consegna e restituzione</div><div>Il veicolo viene consegnato nelle condizioni descritte nel presente verbale. La restituzione deve avvenire entro la data stabilita, nelle medesime condizioni.</div>
+<div class="p-ct">Art.2 — Uso del veicolo</div><div>Il veicolo deve essere utilizzato esclusivamente dal conduttore autorizzato. È vietato l'uso per gare, competizioni, trasporto a pagamento o attività illecite.</div>
+<div class="p-ct">Art.3 — Carburante</div><div>La restituzione deve avvenire con lo stesso livello di carburante della consegna. Il carburante mancante sarà addebitato con maggiorazione di servizio.</div>
+<div class="p-ct">Art.4 — Responsabilità danni</div><div>Il conduttore è responsabile di tutti i danni al veicolo e a terzi durante il periodo di noleggio. La cauzione sarà trattenuta in caso di danni o inadempienze contrattuali.</div>
+<div class="p-ct">Art.5 — Penali per ritardo</div><div>In caso di restituzione tardiva verrà addebitata una penale pari al doppio del canone giornaliero per ogni giorno o frazione di giorno di ritardo.</div>
+<div class="p-ct">Art.6 — Sinistri</div><div>In caso di sinistro il conduttore è tenuto a: non abbandonare il veicolo, raccogliere i dati dei terzi, compilare il modulo CID e contattare immediatamente l'agenzia.</div>
+<div class="p-ct">Art.7 — Foro competente</div><div>Per qualsiasi controversia le parti eleggono come foro competente ${settings.foro?'il Tribunale di '+settings.foro:"quello del luogo in cui ha sede l'agenzia locatrice"}.</div>
+${settings.clauses?`<div class="p-ct">Clausole aggiuntive</div><div>${settings.clauses}</div>`:''}
+</div></div>
+<div class="p-sigs"><div><div class="p-sig-line"></div><div class="p-sig-lbl"><strong>${ag}</strong><br>Firma e timbro</div></div><div><div class="p-sig-line"></div><div class="p-sig-lbl"><strong>IL CONDUTTORE</strong><br>${gv('f_cognome')||'___________'} ${gv('f_nome')||''}<br>Firma per accettazione</div></div></div>
+<div style="text-align:center;font-size:7.5pt;color:#777;margin-top:10px">Il conduttore dichiara di aver letto e accettato integralmente le condizioni generali di noleggio. | ${ctrStr} | ${fd(dk(TODAY))}</div>
+</div>`;
   document.getElementById('parea').innerHTML=html;
   document.getElementById('parea').style.display='block';
   window.print();
@@ -567,17 +726,20 @@ function printContract(){
 // LIST
 // ---
 function populateListFilters(){
-  const ys=document.getElementById('listYear'); const cur=ys.value;
+  const ys=document.getElementById('listYear'); if(!ys)return;
+  const cur=ys.value;
   ys.innerHTML='<option value="">Tutti gli anni</option>';
   const yrs=new Set(rentals.map(r=>r.startKey?r.startKey.split('-')[0]:null).filter(Boolean));
   [...yrs].sort().reverse().forEach(y=>{const o=document.createElement('option');o.value=y;o.textContent=y;ys.appendChild(o)});
   if(cur)ys.value=cur;
   const cs=document.getElementById('listCar'); const curC=cs.value;
   cs.innerHTML='<option value="">Tutte le auto</option>';
-  cars.forEach(c=>{const o=document.createElement('option');o.value=c.id;o.textContent=`${c.targa} — ${c.model}`;cs.appendChild(o)});
+  cars.forEach(c=>{const o=document.createElement('option');o.value=c.id;o.textContent=`${c.targa} — ${c.model||''}`;cs.appendChild(o)});
   if(curC)cs.value=curC;
 }
+
 function sortList(key){if(listSortKey===key)listSortDir*=-1;else{listSortKey=key;listSortDir=-1;}renderList()}
+
 function renderList(){
   const q=(document.getElementById('listSearch').value||'').toLowerCase();
   const yr=document.getElementById('listYear').value;
@@ -590,6 +752,7 @@ function renderList(){
   if(st)list=list.filter(r=>r.stato===st);
   if(cc)list=list.filter(r=>r.carId===cc);
   if(pp)list=list.filter(r=>(r.payStatus||'nonpagato')===pp);
+
   list.sort((a,b)=>{
     let va,vb;
     if(listSortKey==='cliente'){va=a.cognome||'';vb=b.cognome||''}
@@ -602,6 +765,7 @@ function renderList(){
     else{va=a.startKey||'';vb=b.startKey||''}
     if(va<vb)return -1*listSortDir; if(va>vb)return 1*listSortDir; return 0;
   });
+
   let totalRev=0;
   const tbody=document.getElementById('listBody'); tbody.innerHTML='';
   list.forEach(r=>{
@@ -624,7 +788,7 @@ function renderList(){
 // STATS
 // ---
 function renderStats(){
-  const wrap=document.getElementById('page-stats');
+  const wrap=document.getElementById('statsWrap');
   if(!wrap)return;
   const dArr=getDays(curYear);
   const totalDays=dArr.length;
@@ -637,7 +801,6 @@ function renderStats(){
   const avgDays=yRentals.length?Math.round(totalRented/yRentals.length):0;
   const totalPending=rentals.reduce((s,r)=>s+(parseFloat(r.saldo)||0),0);
 
-  // KPI
   let h='<div class="kpi-grid">';
   h+='<div class="kpi"><div class="kpi-val">'+yRentals.length+'</div><div class="kpi-lbl">Noleggi '+curYear+'</div></div>';
   h+='<div class="kpi"><div class="kpi-val">&euro; '+Math.round(totalRev).toLocaleString('it')+'</div><div class="kpi-lbl">Incasso totale (IVA incl.)</div></div>';
@@ -647,7 +810,7 @@ function renderStats(){
 
   // Grafico mensile
   const monthly=Array(12).fill(0).map((_,mi)=>{
-    const mrs=yRentals.filter(r=>new Date(r.startKey).getMonth()===mi);
+    const mrs=yRentals.filter(r=>{const d=new Date(r.startKey);return d.getMonth()===mi;});
     return{m:MONTHS[mi].substring(0,3),rev:mrs.reduce((s,r)=>s+(parseFloat(r.totale)||0),0),n:mrs.length};
   });
   const maxRev=Math.max(1,...monthly.map(m=>m.rev));
@@ -656,23 +819,14 @@ function renderStats(){
     const pct=Math.round(m.rev/maxRev*100);
     h+='<div class="month-bar"><div class="month-fill" style="height:'+pct+'%" title="'+m.m+': &euro;'+Math.round(m.rev).toLocaleString('it')+'"></div>';
     h+='<div class="month-label">'+m.m+'</div>';
-    h+='<div class="month-val">&euro;&thinsp;'+Math.round(m.rev/1000*10)/10+'k</div></div>';
+    h+='<div class="month-val">&euro;&thinsp;'+(m.rev?(Math.round(m.rev/100)/10).toFixed(1)+'k':'0')+'</div></div>';
   });
   h+='</div></div>';
 
-  // Provvigioni
-  h+='<div class="chart-box" style="background:rgba(16,185,129,.07);border-color:rgba(16,185,129,.2)">';
-  h+='<div class="chart-title" style="color:var(--green)">Provvigioni agenti (5% su incasso IVA incl.)</div>';
-  h+='<div style="display:flex;gap:24px;margin-top:8px">';
-  h+='<div><div style="font-size:22px;font-weight:700;color:var(--green)">&euro; '+Math.round(totalRev*0.05).toLocaleString('it')+'</div><div style="font-size:11px;color:var(--text3)">Andrea</div></div>';
-  h+='<div><div style="font-size:22px;font-weight:700;color:var(--green)">&euro; '+Math.round(totalRev*0.05).toLocaleString('it')+'</div><div style="font-size:11px;color:var(--text3)">Michele</div></div>';
-  h+='</div></div>';
-
-  // Saldo da incassare
   if(totalPending>0){
     h+='<div class="chart-box" style="background:rgba(245,158,11,.07);border-color:rgba(245,158,11,.2)">';
     h+='<div class="chart-title" style="color:var(--accent)">Saldo da incassare (tutti gli anni)</div>';
-    h+='<div style="font-size:28px;font-weight:700;color:var(--accent)">&euro; '+Math.round(totalPending).toLocaleString('it')+'</div>';
+    h+='<div style="font-size:28px;font-weight:700;color:var(--accent);font-family:DM Mono,monospace">&euro; '+Math.round(totalPending).toLocaleString('it')+'</div>';
     h+='</div>';
   }
 
@@ -689,14 +843,15 @@ function renderStats(){
   }).sort((a,b)=>b.rev-a.rev);
 
   const totNole=carOcc.reduce((s,o)=>s+o.nole,0);
-  const totDays=carOcc.reduce((s,o)=>s+o.days,0);
-  const totRev=carOcc.reduce((s,o)=>s+o.rev,0);
+  const totD=carOcc.reduce((s,o)=>s+o.days,0);
+  const totR=carOcc.reduce((s,o)=>s+o.rev,0);
 
   h+='<div class="chart-box" style="overflow-x:auto">';
   h+='<div class="chart-title">&#128200; Ricavo e occupazione per auto &mdash; '+curYear+'</div>';
   h+='<table style="width:100%;border-collapse:collapse;font-size:12px;margin-top:10px">';
   h+='<thead><tr style="border-bottom:1px solid rgba(255,255,255,.12)">';
   h+='<th style="text-align:left;padding:6px 8px;color:var(--text3);font-weight:500">Auto</th>';
+  h+='<th style="text-align:center;padding:6px 8px;color:var(--text3);font-weight:500">Cat.</th>';
   h+='<th style="text-align:center;padding:6px 8px;color:var(--text3);font-weight:500">Noleggi</th>';
   h+='<th style="text-align:center;padding:6px 8px;color:var(--text3);font-weight:500">Giorni</th>';
   h+='<th style="padding:6px 8px;color:var(--text3);font-weight:500">Occupazione</th>';
@@ -708,7 +863,8 @@ function renderStats(){
     var rc=o.rev>0?'var(--green)':'var(--text3)';
     h+='<tr style="border-bottom:1px solid rgba(255,255,255,.04)">';
     h+='<td style="padding:6px 8px"><span style="color:'+col+';font-weight:700;font-family:DM Mono,monospace;font-size:12px">'+o.car.targa+'</span>';
-    h+='<div style="font-size:10px;color:var(--text3);margin-top:1px">'+o.car.model+'</div></td>';
+    h+='<div style="font-size:10px;color:var(--text3);margin-top:1px">'+(o.car.model||'')+'</div></td>';
+    h+='<td style="text-align:center;padding:6px 8px;color:var(--accent);font-weight:600">'+(o.car.cat||'—')+'</td>';
     h+='<td style="text-align:center;padding:6px 8px;color:var(--text2)">'+o.nole+'</td>';
     h+='<td style="text-align:center;padding:6px 8px;color:var(--text2)">'+o.days+'</td>';
     h+='<td style="padding:6px 8px"><div style="display:flex;align-items:center;gap:6px">';
@@ -719,13 +875,17 @@ function renderStats(){
   });
   h+='<tr style="border-top:2px solid rgba(255,255,255,.15)">';
   h+='<td style="padding:7px 8px;font-weight:700">TOTALE '+curYear+'</td>';
+  h+='<td></td>';
   h+='<td style="text-align:center;padding:7px 8px;font-weight:700">'+totNole+'</td>';
-  h+='<td style="text-align:center;padding:7px 8px;font-weight:700">'+totDays+'</td><td></td>';
-  h+='<td style="text-align:right;padding:7px 8px;font-weight:700;font-family:DM Mono,monospace;color:var(--green)">&euro; '+Math.round(totRev).toLocaleString('it')+'</td>';
+  h+='<td style="text-align:center;padding:7px 8px;font-weight:700">'+totD+'</td><td></td>';
+  h+='<td style="text-align:right;padding:7px 8px;font-weight:700;font-family:DM Mono,monospace;color:var(--green)">&euro; '+Math.round(totR).toLocaleString('it')+'</td>';
   h+='</tr></tbody></table></div>';
-
   wrap.innerHTML=h;
 }
+
+// ---
+// CLIENTS
+// ---
 function renderClients(){
   const q=(document.getElementById('clientSearch').value||'').toLowerCase();
   const list=clients.filter(c=>!q||(c.cognome||'').toLowerCase().includes(q)||(c.nome||'').toLowerCase().includes(q)||(c.cf||'').toLowerCase().includes(q));
@@ -733,10 +893,11 @@ function renderClients(){
   if(!list.length){grid.innerHTML='<div style="color:var(--text2);padding:20px;font-size:13px">Nessun cliente. Aggiungine uno con il tasto in alto a destra.</div>';return}
   list.forEach(c=>{
     const card=document.createElement('div'); card.className='client-card';
-    card.innerHTML=`<div class="cc-name">${c.cognome||'—'} ${c.nome||''}</div><div class="cc-cf">${c.cf||''}</div><div class="cc-info">${c.tel?'📞 '+c.tel+'  ':''} ${c.email?'✉ '+c.email:''}</div><div style="margin-top:6px"><span class="cc-badge">${c.tipo||'—'}</span></div>`;
+    card.innerHTML=`<div class="cc-name">${c.cognome||'—'} ${c.nome||''}</div><div class="cc-cf">${c.cf||''}</div><div class="cc-info">${c.tel?'📞 '+c.tel+' ':''} ${c.email?'✉ '+c.email:''}</div><div style="margin-top:6px"><span class="cc-badge">${c.tipo||'—'}</span></div>`;
     card.onclick=()=>openClientModal(c.id); grid.appendChild(card);
   });
 }
+
 function openClientModal(id){
   curClientId=id; const c=id?clients.find(x=>x.id===id):null;
   document.getElementById('mClientTitle').textContent=c?'Modifica Cliente':'Nuovo Cliente';
@@ -745,11 +906,13 @@ function openClientModal(id){
   document.getElementById('btnCliDel').style.display=c?'flex':'none';
   document.getElementById('mClient').classList.add('open');
 }
+
 function saveClient(){
   const c={id:curClientId||'cl'+Date.now(),tipo:gv('cl_tipo'),cognome:gv('cl_cog'),nome:gv('cl_nom'),cf:gv('cl_cf'),indirizzo:gv('cl_ind'),tel:gv('cl_tel'),email:gv('cl_email'),pat:gv('cl_pat'),patS:gv('cl_pats'),note:gv('cl_note')};
   if(curClientId){const i=clients.findIndex(x=>x.id===curClientId);if(i>=0)clients[i]=c}else clients.push(c);
   fbSet('clients',c.id,c); closeM('mClient'); renderClients(); toast('Cliente salvato ✓');
 }
+
 async function deleteClient(){
   if(!curClientId||!confirm('Eliminare cliente?'))return;
   clients=clients.filter(c=>c.id!==curClientId);
@@ -762,35 +925,52 @@ async function deleteClient(){
 function renderFleet(){
   const grid=document.getElementById('fleetGrid'); grid.innerHTML='';
   const today=dk(TODAY), in30=dk(new Date(TODAY.getTime()+30*86400000)), in60=dk(new Date(TODAY.getTime()+60*86400000));
+  if(!cars.length){
+    grid.innerHTML='<div style="color:var(--text2);padding:20px;font-size:13px">Nessuna auto. Aggiungine una con il tasto in alto a destra.</div>';
+    return;
+  }
   cars.forEach(car=>{
     function ec(d){if(!d)return'';if(d<=today)return'exp';if(d<=in30||d<=in60)return'warn';return'ok'}
     function el(d){if(!d)return'—';if(d<=today)return'🔴 '+fd(d);if(d<=in30)return'🟠 '+fd(d);if(d<=in60)return'🟡 '+fd(d);return'🟢 '+fd(d)}
     const isRented=rentals.some(r=>r.carId===car.id&&r.startKey<=today&&r.endKey>=today);
     const card=document.createElement('div'); card.className='fleet-card';
-    card.innerHTML=`<div class="fc-header"><div class="fc-color" style="background:${car.color||'#2563eb'}"></div><div><div class="fc-targa" style="color:${car.color||'var(--accent)'}">${car.targa}</div><div class="fc-model">${car.model}</div></div><div class="fc-status ${isRented?'warn':'ok'}">${isRented?'Noleggiata':'Disponibile'}</div></div>
-    <div class="exp-grid"><div class="exp-item"><div class="exp-lbl">Assicurazione</div><div class="exp-date ${ec(car.ass)}">${el(car.ass)}</div></div><div class="exp-item"><div class="exp-lbl">Bollo</div><div class="exp-date ${ec(car.bollo)}">${el(car.bollo)}</div></div><div class="exp-item"><div class="exp-lbl">Revisione</div><div class="exp-date ${ec(car.rev)}">${el(car.rev)}</div></div></div>
-    ${car.note?`<div style="font-size:10px;color:var(--text2);margin-top:7px">📝 ${car.note}</div>`:''}
-    <div style="display:flex;gap:6px;margin-top:8px"><div class="fc-btn" onclick="openCarEditModal('${car.id}')">✏ Modifica</div></div>`;
+    card.innerHTML=`<div class="fc-header"><div class="fc-color" style="background:${car.color||'#2563eb'}"></div><div style="flex:1;min-width:0"><div class="fc-targa" style="color:${car.color||'var(--accent)'}">${car.targa}</div><div class="fc-model">${car.model||''}</div>${car.cat?`<div class="fc-cat">Cat. ${car.cat} — ${catLabel(car.cat).split('—')[1]||''}</div>`:''}</div><div class="fc-status ${isRented?'warn':'ok'}">${isRented?'Noleggiata':'Disponibile'}</div></div>
+<div class="exp-grid"><div class="exp-item"><div class="exp-lbl">Assicurazione</div><div class="exp-date ${ec(car.ass)}">${el(car.ass)}</div></div><div class="exp-item"><div class="exp-lbl">Bollo</div><div class="exp-date ${ec(car.bollo)}">${el(car.bollo)}</div></div><div class="exp-item"><div class="exp-lbl">Revisione</div><div class="exp-date ${ec(car.rev)}">${el(car.rev)}</div></div></div>
+${car.note?`<div style="font-size:10px;color:var(--text2);margin-top:7px">📝 ${car.note}</div>`:''}
+<div style="display:flex;gap:6px;margin-top:8px"><div class="fc-btn" onclick="openCarEditModal('${car.id}')">✏ Modifica</div></div>`;
     grid.appendChild(card);
   });
 }
+
 function openCarEditModal(id){
   curCarEditId=id; const car=id?cars.find(c=>c.id===id):null;
   document.getElementById('mCarEditTitle').textContent=car?'Modifica Auto':'Nuova Auto';
   const s=(fid,v)=>{const el=document.getElementById(fid);if(el)el.value=v||''};
-  s('ce_targa',car?.targa);s('ce_model',car?.model);s('ce_ass',car?.ass);s('ce_bollo',car?.bollo);s('ce_rev',car?.rev);s('ce_note',car?.note);
+  s('ce_targa',car?.targa);s('ce_model',car?.model);s('ce_cat',car?.cat);s('ce_ass',car?.ass);s('ce_bollo',car?.bollo);s('ce_rev',car?.rev);s('ce_note',car?.note);
   selCarColor=car?.color||RCOLS[0];
   buildColorPick('carColorPick',RCOLS,selCarColor,c=>selCarColor=c);
   document.getElementById('btnCarDel').style.display=car?'flex':'none';
   document.getElementById('mCarEdit').classList.add('open');
 }
+
 function saveCarEdit(){
   const targa=gv('ce_targa').toUpperCase();
   if(!targa){toast('Inserisci la targa','err');return}
-  const c={id:curCarEditId||'c'+Date.now(),targa,model:gv('ce_model')||'Veicolo',ass:gv('ce_ass'),bollo:gv('ce_bollo'),rev:gv('ce_rev'),note:gv('ce_note'),color:selCarColor};
+  const c={
+    id:curCarEditId||'c'+Date.now(),
+    targa,
+    model:gv('ce_model')||'Veicolo',
+    cat:gv('ce_cat')||'',
+    ass:gv('ce_ass'),
+    bollo:gv('ce_bollo'),
+    rev:gv('ce_rev'),
+    note:gv('ce_note'),
+    color:selCarColor
+  };
   if(curCarEditId){const i=cars.findIndex(x=>x.id===curCarEditId);if(i>=0)cars[i]=c}else cars.push(c);
   fbSet('cars',c.id,c); closeM('mCarEdit'); buildTable(); renderFleet(); checkAlerts(); toast('Auto salvata ✓');
 }
+
 async function deleteCarEdit(){
   if(!curCarEditId||!confirm("Rimuovere questa auto? I noleggi associati non verranno eliminati."))return;
   cars=cars.filter(c=>c.id!==curCarEditId);
@@ -801,45 +981,75 @@ async function deleteCarEdit(){
 // SETTINGS
 // ---
 function loadSettings(){
-  const s=(id,v)=>{const e=document.getElementById(id);if(e)e.value=v||"";};
-  s("set_agency",settings.agency);s("set_address",settings.address);s("set_phone",settings.phone);
-  s("set_email",settings.email);s("set_piva",settings.piva);s("set_foro",settings.foro);s("set_clauses",settings.clauses);
-  const pg=document.getElementById("page-settings");
-  if(pg&&!pg.querySelector("#lp_A_alta")){
-    const wrap=pg.querySelector(".settings-wrap")||pg;
-    const div=document.createElement("div");
-    const st=settings.stagioni||{alta:{from:"07-01",to:"08-31"},media:{from:"06-01",to:"06-30"}};
-    const li=settings.listino||{A:{alta:30,media:25,bassa:20},B:{alta:50,media:40,bassa:35},C:{alta:60,media:50,bassa:40},D:{alta:70,media:60,bassa:50},E:{alta:100,media:80,bassa:65}};
-    const cats=[["A","Economica"],["B","Compatta"],["C","Berlina/Fam."],["D","SUV"],["E","Premium"]];
-    const stags=["alta","media","bassa"];
-    let rows=cats.map(([c,n])=>"<tr><td style=\"padding:5px 8px;color:var(--text2)\">"+c+" — "+n+"</td>"+stags.map(sg=>"<td style=\"text-align:center;padding:3px\"><input type=\"number\" id=\"lp_"+c+"_"+sg+"\" min=\"0\" value=\""+(li[c]&&li[c][sg]||0)+"\" style=\"width:60px;text-align:right;background:var(--navy);border:1px solid rgba(255,255,255,.15);border-radius:4px;color:var(--text);padding:3px 5px\"></td>").join("")+"</tr>").join("");
-    div.innerHTML="<div class=\"settings-section\" style=\"margin-top:16px\"><div class=\"settings-title\">&#128197; Stagioni (MM-DD)</div><div class=\"fg t3\" style=\"margin-top:8px\"><div class=\"ff\"><label>Alta inizio</label><input type=\"text\" id=\"set_alta_from\" placeholder=\"07-01\" maxlength=\"5\" value=\""+(st.alta&&st.alta.from||"07-01")+"\" style=\"font-family:DM Mono,monospace\"></div><div class=\"ff\"><label>Alta fine</label><input type=\"text\" id=\"set_alta_to\" placeholder=\"08-31\" maxlength=\"5\" value=\""+(st.alta&&st.alta.to||"08-31")+"\" style=\"font-family:DM Mono,monospace\"></div><div class=\"ff\"><label>Media inizio</label><input type=\"text\" id=\"set_media_from\" placeholder=\"06-01\" maxlength=\"5\" value=\""+(st.media&&st.media.from||"06-01")+"\" style=\"font-family:DM Mono,monospace\"></div><div class=\"ff\"><label>Media fine</label><input type=\"text\" id=\"set_media_to\" placeholder=\"06-30\" maxlength=\"5\" value=\""+(st.media&&st.media.to||"06-30")+"\" style=\"font-family:DM Mono,monospace\"></div></div></div><div class=\"settings-section\" style=\"margin-top:16px\"><div class=\"settings-title\">&#128176; Listino &euro;/giorno (IVA inclusa)</div><table style=\"width:100%;border-collapse:collapse;font-size:13px;margin-top:8px\"><thead><tr><th style=\"text-align:left;padding:5px 8px;color:var(--text3);font-weight:500;width:38%\">Categoria</th><th style=\"text-align:center;padding:5px 8px;color:var(--text3);font-weight:500\">Alta</th><th style=\"text-align:center;padding:5px 8px;color:var(--text3);font-weight:500\">Media</th><th style=\"text-align:center;padding:5px 8px;color:var(--text3);font-weight:500\">Bassa</th></tr></thead><tbody>"+rows+"</tbody></table></div>";
-    wrap.appendChild(div);
-  } else if(pg) {
-    const st2=settings.stagioni||{alta:{from:"07-01",to:"08-31"},media:{from:"06-01",to:"06-30"}};
-    const li2=settings.listino||{};
-    const sv2=(id,v)=>{const e=document.getElementById(id);if(e)e.value=v||"";};
-    sv2("set_alta_from",st2.alta&&st2.alta.from||"07-01");sv2("set_alta_to",st2.alta&&st2.alta.to||"08-31");
-    sv2("set_media_from",st2.media&&st2.media.from||"06-01");sv2("set_media_to",st2.media&&st2.media.to||"06-30");
-    ["A","B","C","D","E"].forEach(c=>{["alta","media","bassa"].forEach(sg=>{const e=document.getElementById("lp_"+c+"_"+sg);if(e)e.value=li2[c]&&li2[c][sg]||0;});});
-  }
+  const s=(id,v)=>{const e=document.getElementById(id);if(e)e.value=v==null?'':v;};
+  s('set_agency',settings.agency);
+  s('set_address',settings.address);
+  s('set_phone',settings.phone);
+  s('set_email',settings.email);
+  s('set_piva',settings.piva);
+  s('set_foro',settings.foro);
+  s('set_clauses',settings.clauses);
+  // Stagioni
+  const st=settings.stagioni||DEFAULT_SETTINGS.stagioni;
+  s('set_alta_from',st.alta?.from);
+  s('set_alta_to',st.alta?.to);
+  s('set_media_from',st.media?.from);
+  s('set_media_to',st.media?.to);
+  // Tabella tariffe
+  buildTariffTable();
 }
+
+function buildTariffTable(){
+  const body=document.getElementById('tariffBody');
+  if(!body)return;
+  const li=settings.listino||DEFAULT_SETTINGS.listino;
+  let h='';
+  CATEGORIES.forEach(([cat,name])=>{
+    h+=`<tr><td><strong style="color:var(--accent)">${cat}</strong> — ${name}</td>`;
+    SEASONS.forEach(sg=>{
+      const v=(li[cat] && li[cat][sg]!=null)?li[cat][sg]:0;
+      h+=`<td style="text-align:center"><input type="number" min="0" step="1" class="tariff-input" id="lp_${cat}_${sg}" value="${v}" oninput="saveSettings()"></td>`;
+    });
+    h+='</tr>';
+  });
+  body.innerHTML=h;
+}
+
 function saveSettings(){
-  settings={agency:gv('set_agency'),address:gv('set_address'),phone:gv('set_phone'),email:gv('set_email'),piva:gv('set_piva'),foro:gv('set_foro'),clauses:gv('set_clauses')};
-  settings.stagioni={alta:{from:gv('set_alta_from')||'07-01',to:gv('set_alta_to')||'08-31'},media:{from:gv('set_media_from')||'06-01',to:gv('set_media_to')||'06-30'}};settings.listino={};['A','B','C','D','E'].forEach(cat=>{settings.listino[cat]={alta:parseFloat(document.getElementById('lp_'+cat+'_alta')?.value)||0,media:parseFloat(document.getElementById('lp_'+cat+'_media')?.value)||0,bassa:parseFloat(document.getElementById('lp_'+cat+'_bassa')?.value)||0};});fbSet('meta','settings',settings);
+  settings.agency=gv('set_agency');
+  settings.address=gv('set_address');
+  settings.phone=gv('set_phone');
+  settings.email=gv('set_email');
+  settings.piva=gv('set_piva');
+  settings.foro=gv('set_foro');
+  settings.clauses=gv('set_clauses');
+  settings.stagioni={
+    alta:{from:gv('set_alta_from')||'07-01',to:gv('set_alta_to')||'08-31'},
+    media:{from:gv('set_media_from')||'06-01',to:gv('set_media_to')||'06-30'}
+  };
+  const newL={};
+  CATEGORIES.forEach(([cat])=>{
+    newL[cat]={};
+    SEASONS.forEach(sg=>{
+      const el=document.getElementById('lp_'+cat+'_'+sg);
+      newL[cat][sg]=el?(parseFloat(el.value)||0):0;
+    });
+  });
+  settings.listino=newL;
+  fbSet('meta','settings',settings);
   document.getElementById('agencyName').textContent=settings.agency||'Fleet Planner';
-  toast('Impostazioni salvate ✓');
 }
 
 // ---
-// EXPORT (backup locale opzionale)
+// EXPORT
 // ---
 function exportData(){
-  const d={cars,rentals,clients,settings,ctrCounter,exported:new Date().toISOString(),version:3};
+  const d={cars,rentals,clients,settings,ctrCounter,exported:new Date().toISOString(),version:4};
   const b=new Blob([JSON.stringify(d,null,2)],{type:'application/json'});
   const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download=`fleet_backup_${new Date().toISOString().split('T')[0]}.json`;a.click();
   toast('Backup esportato ✓');
 }
+
 async function importData(e){
   const file=e.target.files[0]; if(!file)return;
   const r=new FileReader();
@@ -849,28 +1059,30 @@ async function importData(e){
       if(d.cars){cars=d.cars; for(const c of cars)await fbSet('cars',c.id,c)}
       if(d.rentals){rentals=d.rentals; for(const r of rentals)await fbSet('rentals',r.id,r)}
       if(d.clients){clients=d.clients; for(const c of clients)await fbSet('clients',c.id,c)}
-      if(d.settings){settings=d.settings; await fbSet('meta','settings',settings)}
+      if(d.settings){settings=mergeSettings(d.settings); await fbSet('meta','settings',settings)}
       if(d.ctrCounter){ctrCounter=d.ctrCounter; await fbSet('meta','ctr',{value:ctrCounter})}
       buildTable(); toast('Backup importato e sincronizzato ✓');
-    }catch{toast('File non valido','err')}
+    }catch(err){console.error(err);toast('File non valido','err')}
   };
   r.readAsText(file); e.target.value='';
 }
+
 function exportCSV(){
   const dArr=getDays(curYear);
-  const headers=['N° Contratto','Cliente','C.F./P.IVA','Auto','Data Inizio','Data Fine','Giorni','Prezzo/gg','Totale','Acconto','Saldo','Stato Pagamento','Stato Noleggio','Pagamento','Note'];
+  const headers=['N° Contratto','Cliente','C.F./P.IVA','Auto','Categoria','Data Inizio','Data Fine','Giorni','Prezzo/gg','Totale','Acconto','Saldo','Stato Pagamento','Stato Noleggio','Pagamento','Note'];
   const rows=rentals.map(r=>{
     const car=cars.find(c=>c.id===r.carId);
     const si=dArr.findIndex(d=>dk(d)===r.startKey), ei=dArr.findIndex(d=>dk(d)===r.endKey);
     const days=si>=0&&ei>=0?ei-si+1:'';
     const ctrStr=r.ctrNum?`CTR-${(r.startKey||'').split('-')[0]||curYear}-${p2(r.ctrNum)}`:'';
-    return[ctrStr,`${r.cognome||''} ${r.nome||''}`.trim(),r.cf||'',car?car.targa:'',fd(r.startKey),fd(r.endKey),days,r.prezzo||'',r.totale||'',r.acconto||'',r.saldo||'',r.payStatus||'',r.stato||'',r.pag||'',r.note||''];
+    return[ctrStr,`${r.cognome||''} ${r.nome||''}`.trim(),r.cf||'',car?car.targa:'',car?.cat||'',fd(r.startKey),fd(r.endKey),days,r.prezzo||'',r.totale||'',r.acconto||'',r.saldo||'',r.payStatus||'',r.stato||'',r.pag||'',r.note||''];
   });
   const csv=[headers,...rows].map(row=>row.map(v=>`"${String(v).replace(/"/g,'""')}"`).join(',')).join('\n');
   const b=new Blob(['\uFEFF'+csv],{type:'text/csv;charset=utf-8'});
   const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download=`noleggi_${curYear}.csv`;a.click();
   toast('CSV esportato ✓');
 }
+
 function confirmClear(){
   if(confirm('Attenzione: questo cancellerà i dati su Firebase per TUTTI i dispositivi. Sei sicuro?')){
     toast('Per sicurezza, elimina i dati direttamente dalla console Firebase > Firestore.','err');
@@ -878,49 +1090,24 @@ function confirmClear(){
 }
 
 // ---
-// UTILS
+// PDF MENSILE
 // ---
-
-function searchGlobal(q){
-  const box=document.getElementById('searchResults');
-  if(!q||q.length<2){box.style.display='none';return;}
-  q=q.toLowerCase();
-  const res=[];
-  rentals.forEach(function(r){
-    const car=cars.find(function(c){return c.id===r.carId;})||{};
-    const s=((r.cognome||'')+' '+(r.nome||'')+' '+(r.cf||'')+' '+(r.tel||'')+' '+(car.targa||'')).toLowerCase();
-    if(s.indexOf(q)>=0) res.push('🗓 '+(r.cognome||'')+' '+(r.nome||'')+' — '+(car.targa||'?')+' '+fd(r.startKey)+' → '+fd(r.endKey));
-  });
-  clients.forEach(function(c){
-    const s=((c.cognome||'')+' '+(c.nome||'')+' '+(c.cf||'')+' '+(c.tel||'')).toLowerCase();
-    if(s.indexOf(q)>=0) res.push('👤 '+(c.cognome||'')+' '+(c.nome||'')+' — '+(c.tel||''));
-  });
-  cars.forEach(function(c){
-    const s=((c.targa||'')+' '+(c.model||'')).toLowerCase();
-    if(s.indexOf(q)>=0) res.push('🚗 '+c.targa+' — '+c.model);
-  });
-  if(!res.length){box.innerHTML='<div style="padding:8px 12px;font-size:12px;color:#888">Nessun risultato</div>';box.style.display='block';return;}
-  box.innerHTML=res.slice(0,6).map(function(t){return '<div style="padding:7px 12px;border-bottom:1px solid rgba(255,255,255,.06);font-size:12px">'+t+'</div>';}).join('');
-  box.style.display='block';
-}
-function closeSearch(){
-  var box=document.getElementById('searchResults');
-  if(box) box.style.display='none';
-  var inp=document.getElementById('globalSearch');
-  if(inp) inp.value='';
-}
-
 function exportMonthPDF(){
-  var month=new Date().getMonth();
-  var mNames=['Gennaio','Febbraio','Marzo','Aprile','Maggio','Giugno','Luglio','Agosto','Settembre','Ottobre','Novembre','Dicembre'];
-  var mrs=rentals.filter(function(r){var d=new Date(r.startKey);return d.getFullYear()===curYear&&d.getMonth()===month;}).sort(function(a,b){return a.startKey.localeCompare(b.startKey);});
-  var rows=mrs.map(function(r){
-    var car=cars.find(function(c){return c.id===r.carId;})||{};
-    var days=Math.round((new Date(r.endKey)-new Date(r.startKey))/(864e5))+1;
-    return '<tr><td>'+(r.cognome||'')+' '+(r.nome||'')+'</td><td>'+(car.targa||'?')+'</td><td>'+fd(r.startKey)+'</td><td>'+fd(r.endKey)+'</td><td style="text-align:center">'+days+'</td><td style="text-align:right">&euro;'+(r.totale||0).toFixed(2)+'</td></tr>';
+  const month=new Date().getMonth();
+  const mNames=MONTHS;
+  const mrs=rentals.filter(r=>{
+    if(!r.startKey)return false;
+    const d=new Date(r.startKey);
+    return d.getFullYear()===curYear && d.getMonth()===month;
+  }).sort((a,b)=>(a.startKey||'').localeCompare(b.startKey||''));
+  const rows=mrs.map(r=>{
+    const car=cars.find(c=>c.id===r.carId)||{};
+    const days=Math.round((new Date(r.endKey)-new Date(r.startKey))/86400000)+1;
+    const tot=parseFloat(r.totale)||0;
+    return `<tr><td>${(r.cognome||'')} ${(r.nome||'')}</td><td>${car.targa||'?'}</td><td>${car.cat||'—'}</td><td>${fd(r.startKey)}</td><td>${fd(r.endKey)}</td><td style="text-align:center">${days}</td><td style="text-align:right">€${tot.toFixed(2)}</td></tr>`;
   }).join('');
-  var tot=mrs.reduce(function(s,r){return s+(r.totale||0);},0);
-  var w=window.open('','_blank');
+  const tot=mrs.reduce((s,r)=>s+(parseFloat(r.totale)||0),0);
+  const w=window.open('','_blank');
   w.document.write('<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Riepilogo '+mNames[month]+' '+curYear+'</title>'
     +'<style>body{font-family:Arial,sans-serif;padding:20px;font-size:12px}h2{margin:0 0 4px}p{margin:2px 0;color:#666}'
     +'table{width:100%;border-collapse:collapse;margin-top:16px}th{background:#111;color:#fff;padding:6px 8px;text-align:left}'
@@ -928,14 +1115,24 @@ function exportMonthPDF(){
     +'@media print{button{display:none}}</style></head><body>'
     +'<h2>'+(settings.agency||'Fleet Planner')+' — Riepilogo '+mNames[month]+' '+curYear+'</h2>'
     +'<p>'+(settings.address||'')+(settings.piva?' | P.IVA '+settings.piva:'')+'</p>'
-    +'<table><thead><tr><th>Cliente</th><th>Targa</th><th>Inizio</th><th>Fine</th><th>GG</th><th>Totale</th></tr></thead>'
+    +'<table><thead><tr><th>Cliente</th><th>Targa</th><th>Cat.</th><th>Inizio</th><th>Fine</th><th>GG</th><th>Totale</th></tr></thead>'
     +'<tbody>'+rows+'</tbody>'
-    +'<tfoot><tr><td colspan="5">TOTALE ('+mrs.length+' noleggi)</td><td style="text-align:right">&euro;'+tot.toFixed(2)+'</td></tr></tfoot>'
+    +'<tfoot><tr><td colspan="6">TOTALE ('+mrs.length+' noleggi)</td><td style="text-align:right">€'+tot.toFixed(2)+'</td></tr></tfoot>'
     +'</table></body></html>');
   w.document.close();
-  setTimeout(function(){w.print();},400);
+  setTimeout(()=>w.print(),400);
 }
-function closeM(id){document.getElementById(id).classList.remove('open')}
-document.querySelectorAll('.overlay').forEach(o=>o.addEventListener('click',e=>{if(e.target===o)o.classList.remove('open')}));
-function toast(msg,type=''){const el=document.getElementById('toast');el.textContent=msg;el.className='toast'+(type==='err'?' err':'')+' show';setTimeout(()=>el.className='toast'+(type==='err'?' err':''),2800)}
 
+// ---
+// UTILS
+// ---
+function closeM(id){const el=document.getElementById(id);if(el)el.classList.remove('open')}
+document.querySelectorAll('.overlay').forEach(o=>o.addEventListener('click',e=>{if(e.target===o)o.classList.remove('open')}));
+
+function toast(msg,type=''){
+  const el=document.getElementById('toast');
+  if(!el)return;
+  el.textContent=msg;
+  el.className='toast'+(type==='err'?' err':'')+' show';
+  setTimeout(()=>el.className='toast'+(type==='err'?' err':''),2800);
+}
