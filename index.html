@@ -100,6 +100,8 @@ header{background:var(--surf);border-bottom:1px solid var(--border);min-height:5
 .avail-free{background:rgba(16,185,129,.2);color:#6ee7b7}
 .avail-busy{background:rgba(239,68,68,.15);color:#fca5a5}
 .planning-wrap{flex:1 1 auto;overflow:auto;position:relative;min-height:0}
+/* Contenitore esterno: i bottoni di nav vivono qui (fuori dallo scroller) */
+.plan-area{flex:1 1 auto;position:relative;min-height:0;display:flex;flex-direction:column}
 /* Controlli navigazione planning (frecce + vai a oggi) */
 .plan-nav{position:absolute;z-index:50;display:flex;gap:6px;pointer-events:none}
 .plan-nav.left{left:8px;top:50%;transform:translateY(-50%);flex-direction:column}
@@ -395,8 +397,10 @@ header{padding:6px 10px;gap:6px}
 <input type="date" id="availTo" style="background:var(--navy);border:1px solid var(--border);border-radius:5px;color:var(--text);font-size:11px;padding:4px 7px;outline:none" onchange="checkAvail()">
 <div class="avail-result" id="availResult"></div>
 </div>
+<div class="plan-area">
 <div class="planning-wrap" id="planWrap">
 <table class="ptable" id="ptable"></table>
+</div>
 <!-- Frecce laterali (solo desktop) -->
 <div class="plan-nav left">
 <button onclick="planScroll('left')" title="Scorri indietro (1 settimana)">‹</button>
