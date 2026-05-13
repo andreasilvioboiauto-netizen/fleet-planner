@@ -35,9 +35,6 @@ async function fbSet(collection, id, data){
   try{
     const{db,doc,setDoc}=window._fb;
     await setDoc(doc(db,'users',uid(),collection,id),data);
-    if(['cars','rentals','clients'].includes(collection)){
-      try{localStorage.setItem('fp_'+collection+'_'+uid(),JSON.stringify(collection==='cars'?cars:collection==='rentals'?rentals:clients));}catch(_){}
-    }
   }catch(e){
     console.error('fbSet error',e);
     toast('Errore connessione','err');
@@ -73,14 +70,16 @@ async function fbLoadAll(){
     const settingsSnap = await getDoc(doc(db,'users',uid(),'meta','settings'));
     const ctrSnap = await getDoc(doc(db,'users',uid(),'meta','ctr'));
 
-    if(carsData.length){cars=carsData;try{localStorage.setItem('fp_cars_'+uid(),JSON.stringify(cars));}catch(_){}}
-    else{const _lsC=localStorage.getItem('fp_cars_'+uid());cars=_lsC?JSON.parse(_lsC):[];}
-
-    if(rentalsData.length){rentals=rentalsData;try{localStorage.setItem('fp_rentals_'+uid(),JSON.stringify(rentals));}catch(_){}}
-    else{const _lsR=localStorage.getItem('fp_rentals_'+uid());rentals=_lsR?JSON.parse(_lsR):[];}
-
-    if(clientsData.length){clients=clientsData;try{localStorage.setItem('fp_clients_'+uid(),JSON.stringify(clients));}catch(_){}}
-    else{const _lsC2=localStorage.getItem('fp_clients_'+uid());clients=_lsC2?JSON.parse(_lsC2):[];}
+    // Firebase è l'unica fonte di verità (niente fallback su localStorage per evitare dati fantasma)
+    cars = carsData;
+    rentals = rentalsData;
+    clients = clientsData;
+    // Pulizia cache vecchia (compat: se esiste localStorage da versioni precedenti, lo svuoto)
+    try{
+      localStorage.removeItem('fp_cars_'+uid());
+      localStorage.removeItem('fp_rentals_'+uid());
+      localStorage.removeItem('fp_clients_'+uid());
+    }catch(_){}
 
     // Merge settings con default per garantire stagioni/listino presenti
     const loaded = settingsSnap.exists()?settingsSnap.data():{};
