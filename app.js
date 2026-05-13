@@ -8,7 +8,13 @@ const SEASONS=['alta','media','bassa'];
 const SEASON_COLORS={alta:'#ef4444',media:'#f59e0b',bassa:'#10b981'};
 const DEFAULT_SETTINGS={
   agency:'',address:'',phone:'',email:'',piva:'',foro:'',clauses:'',
-  stagioni:{alta:{from:'07-01',to:'08-31'},media:{from:'06-01',to:'06-30'}},
+  // Lista dinamica di periodi. Ogni voce: {stagione:'alta'|'media'|'bassa', from:'MM-DD', to:'MM-DD', attivo:true}
+  // I giorni NON coperti da nessun periodo attivo ricadono in 'bassa'.
+  // In caso di sovrapposizione, vince la stagione con priorità più alta (alta > media > bassa).
+  stagioni:[
+    {stagione:'alta', from:'07-01', to:'08-31', attivo:true},
+    {stagione:'media',from:'06-01', to:'06-30', attivo:true}
+  ],
   listino:{A:{alta:35,media:28,bassa:22},B:{alta:50,media:40,bassa:32},C:{alta:65,media:52,bassa:42},D:{alta:80,media:65,bassa:52},E:{alta:110,media:90,bassa:70}}
 };
 const TODAY=new Date(); TODAY.setHours(0,0,0,0);
@@ -104,9 +110,28 @@ window._fbLoadAll=fbLoadAll;
 function mergeSettings(s){
   const out=JSON.parse(JSON.stringify(DEFAULT_SETTINGS));
   ['agency','address','phone','email','piva','foro','clauses'].forEach(k=>{if(s[k]!==undefined)out[k]=s[k]});
+  // Migrazione: il vecchio formato era {alta:{from,to}, media:{from,to}} -> converto in array
   if(s.stagioni){
-    if(s.stagioni.alta){out.stagioni.alta={from:s.stagioni.alta.from||out.stagioni.alta.from,to:s.stagioni.alta.to||out.stagioni.alta.to}}
-    if(s.stagioni.media){out.stagioni.media={from:s.stagioni.media.from||out.stagioni.media.from,to:s.stagioni.media.to||out.stagioni.media.to}}
+    if(Array.isArray(s.stagioni)){
+      // Nuovo formato: array di periodi. Filtro entry valide.
+      out.stagioni = s.stagioni
+        .filter(p => p && p.stagione && ['alta','media','bassa'].includes(p.stagione))
+        .map(p => ({
+          stagione: p.stagione,
+          from: p.from || '',
+          to:   p.to   || '',
+          attivo: p.attivo !== false   // default true
+        }));
+    } else if(typeof s.stagioni === 'object'){
+      // Vecchio formato: oggetto -> converto in array
+      const arr=[];
+      ['alta','media'].forEach(sg=>{
+        if(s.stagioni[sg] && s.stagioni[sg].from && s.stagioni[sg].to){
+          arr.push({stagione:sg, from:s.stagioni[sg].from, to:s.stagioni[sg].to, attivo:true});
+        }
+      });
+      if(arr.length) out.stagioni = arr;
+    }
   }
   if(s.listino){
     CATEGORIES.forEach(([cat])=>{
@@ -174,15 +199,19 @@ function dIdx(key){return DAYS.findIndex(d=>dk(d)===key)}
 function getStagione(dateKey){
   if(!dateKey)return 'bassa';
   const md=dateKey.substring(5); // MM-DD
-  const s=settings.stagioni||DEFAULT_SETTINGS.stagioni;
-  // Gestisce intervalli che attraversano l'anno (es. alta 12-15 -> 01-10)
+  const periodi = Array.isArray(settings.stagioni) ? settings.stagioni : [];
+  // Gestisce intervalli che attraversano l'anno (es. 12-15 -> 01-10)
   const inRange=(val,from,to)=>{
     if(!from||!to)return false;
     if(from<=to) return val>=from && val<=to;
     return val>=from || val<=to;
   };
-  if(s.alta && inRange(md,s.alta.from,s.alta.to))return 'alta';
-  if(s.media && inRange(md,s.media.from,s.media.to))return 'media';
+  // Priorità: alta > media > bassa. Il primo match nell'ordine vince.
+  for(const sg of ['alta','media','bassa']){
+    const match = periodi.some(p => p.attivo!==false && p.stagione===sg && inRange(md,p.from,p.to));
+    if(match) return sg;
+  }
+  // Default: i giorni non coperti sono bassa stagione
   return 'bassa';
 }
 
@@ -1010,14 +1039,66 @@ function loadSettings(){
   s('set_piva',settings.piva);
   s('set_foro',settings.foro);
   s('set_clauses',settings.clauses);
-  // Stagioni
-  const st=settings.stagioni||DEFAULT_SETTINGS.stagioni;
-  s('set_alta_from',st.alta?.from);
-  s('set_alta_to',st.alta?.to);
-  s('set_media_from',st.media?.from);
-  s('set_media_to',st.media?.to);
+  // Lista periodi stagionali
+  renderStagioniList();
   // Tabella tariffe
   buildTariffTable();
+}
+
+function renderStagioniList(){
+  const box=document.getElementById('stagioniList');
+  if(!box)return;
+  const periodi = Array.isArray(settings.stagioni) ? settings.stagioni : [];
+  if(!periodi.length){
+    box.innerHTML='<div style="color:var(--text3);font-size:11px;padding:8px 0">Nessun periodo definito. Tutto l\'anno sarà considerato bassa stagione.</div>';
+    return;
+  }
+  let h='';
+  periodi.forEach((p,i)=>{
+    const color=SEASON_COLORS[p.stagione]||'#888';
+    const checked=p.attivo!==false?'checked':'';
+    const disabled=p.attivo===false?'opacity:.5;':'';
+    h+=`<div class="stag-row" style="${disabled}">`
+      +`<input type="checkbox" ${checked} onchange="toggleStagione(${i},this.checked)" title="Attiva/disattiva">`
+      +`<select onchange="updateStagione(${i},'stagione',this.value)" style="border-left:4px solid ${color};padding-left:8px">`
+        +['alta','media','bassa'].map(sg=>`<option value="${sg}" ${p.stagione===sg?'selected':''}>${sg.toUpperCase()}</option>`).join('')
+      +`</select>`
+      +`<input type="text" value="${p.from||''}" placeholder="MM-DD" maxlength="5" onchange="updateStagione(${i},'from',this.value)" style="width:75px;font-family:'DM Mono',monospace">`
+      +`<span style="color:var(--text3)">→</span>`
+      +`<input type="text" value="${p.to||''}" placeholder="MM-DD" maxlength="5" onchange="updateStagione(${i},'to',this.value)" style="width:75px;font-family:'DM Mono',monospace">`
+      +`<button class="btn-sm" style="background:rgba(239,68,68,.15);color:#fca5a5;border-color:rgba(239,68,68,.3)" onclick="removeStagione(${i})" title="Rimuovi">✕</button>`
+      +`</div>`;
+  });
+  box.innerHTML=h;
+}
+
+function addStagione(){
+  if(!Array.isArray(settings.stagioni)) settings.stagioni=[];
+  settings.stagioni.push({stagione:'bassa', from:'', to:'', attivo:true});
+  renderStagioniList();
+  saveSettings();
+}
+
+function removeStagione(i){
+  if(!Array.isArray(settings.stagioni))return;
+  settings.stagioni.splice(i,1);
+  renderStagioniList();
+  saveSettings();
+}
+
+function toggleStagione(i,val){
+  if(!Array.isArray(settings.stagioni)||!settings.stagioni[i])return;
+  settings.stagioni[i].attivo=!!val;
+  renderStagioniList();
+  saveSettings();
+}
+
+function updateStagione(i,field,val){
+  if(!Array.isArray(settings.stagioni)||!settings.stagioni[i])return;
+  settings.stagioni[i][field]=val;
+  // Se cambio la stagione, ri-render per aggiornare il colore del bordo
+  if(field==='stagione') renderStagioniList();
+  saveSettings();
 }
 
 function buildTariffTable(){
@@ -1044,10 +1125,9 @@ function saveSettings(){
   settings.piva=gv('set_piva');
   settings.foro=gv('set_foro');
   settings.clauses=gv('set_clauses');
-  settings.stagioni={
-    alta:{from:gv('set_alta_from')||'07-01',to:gv('set_alta_to')||'08-31'},
-    media:{from:gv('set_media_from')||'06-01',to:gv('set_media_to')||'06-30'}
-  };
+  // settings.stagioni è già aggiornato direttamente dagli handler della lista (add/remove/update/toggle)
+  // Mi assicuro solo che sia un array valido
+  if(!Array.isArray(settings.stagioni)) settings.stagioni=[];
   const newL={};
   CATEGORIES.forEach(([cat])=>{
     newL[cat]={};

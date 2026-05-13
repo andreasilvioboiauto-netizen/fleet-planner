@@ -194,6 +194,10 @@ header{background:var(--surf);border-bottom:1px solid var(--border);min-height:5
 .tariff-input:focus{border-color:var(--blue-l)}
 .season-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}
 .season-grid .ff input{font-family:'DM Mono',monospace}
+.stag-row{display:flex;align-items:center;gap:8px;background:var(--navy);border:1px solid var(--border);border-radius:6px;padding:6px 8px;flex-wrap:wrap}
+.stag-row select,.stag-row input[type="text"]{background:var(--surf);border:1px solid var(--border);border-radius:5px;color:var(--text);font-family:'DM Sans',sans-serif;font-size:12px;padding:5px 8px;outline:none}
+.stag-row input[type="text"]:focus,.stag-row select:focus{border-color:var(--blue-l)}
+.stag-row input[type="checkbox"]{width:16px;height:16px;cursor:pointer;accent-color:var(--accent)}
 /* modal */
 .overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.72);z-index:1000;backdrop-filter:blur(4px);align-items:center;justify-content:center}
 .overlay.open{display:flex}
@@ -464,14 +468,10 @@ header{padding:6px 10px;gap:6px}
 </div>
 
 <div class="settings-section">
-<div class="settings-title">📅 Periodi stagionali (formato MM-DD)</div>
-<div style="font-size:11px;color:var(--text3);margin-bottom:10px">I giorni fuori da Alta e Media stagione sono considerati Bassa stagione.</div>
-<div class="season-grid">
-<div class="ff"><label>Alta inizio</label><input type="text" id="set_alta_from" placeholder="07-01" maxlength="5" oninput="saveSettings()"></div>
-<div class="ff"><label>Alta fine</label><input type="text" id="set_alta_to" placeholder="08-31" maxlength="5" oninput="saveSettings()"></div>
-<div class="ff"><label>Media inizio</label><input type="text" id="set_media_from" placeholder="06-01" maxlength="5" oninput="saveSettings()"></div>
-<div class="ff"><label>Media fine</label><input type="text" id="set_media_to" placeholder="06-30" maxlength="5" oninput="saveSettings()"></div>
-</div>
+<div class="settings-title">📅 Periodi stagionali</div>
+<div style="font-size:11px;color:var(--text3);margin-bottom:10px">Aggiungi tutti i periodi che vuoi (es. due basse stagioni, due alte, ecc.). Formato data: <strong>MM-DD</strong>. I giorni non coperti da nessun periodo attivo sono considerati <strong>bassa stagione</strong>. In caso di sovrapposizione, la priorità è: <strong style="color:#ef4444">ALTA</strong> &gt; <strong style="color:#f59e0b">MEDIA</strong> &gt; <strong style="color:#10b981">BASSA</strong>.</div>
+<div id="stagioniList" style="display:flex;flex-direction:column;gap:6px;margin-bottom:10px"></div>
+<button class="btn-sm" onclick="addStagione()" style="background:var(--accent);color:var(--navy);border:none;font-weight:600">+ Aggiungi periodo</button>
 </div>
 
 <div class="settings-section">
