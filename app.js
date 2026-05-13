@@ -356,6 +356,21 @@ function checkAlerts(){
 }
 
 function scrollToToday(smooth){
+  // Se non sono sulla pagina planning, ci vado
+  const planActive=document.getElementById('page-planning').classList.contains('active');
+  if(!planActive){
+    const tab=document.querySelector('.tab[data-page="planning"]');
+    showPage('planning',tab);
+  }
+  // Se sto guardando un altro anno, prima torno all'anno corrente
+  if(curYear!==TODAY.getFullYear()){
+    curYear=TODAY.getFullYear();
+    document.getElementById('yearVal').textContent=curYear;
+    DAYS=getDays(curYear);
+    buildTable();
+    // buildTable richiama scrollToToday(false) in coda → evito doppio scroll
+    return;
+  }
   const idx=DAYS.findIndex(d=>dk(d)===dk(TODAY)); if(idx<0)return;
   const w=document.getElementById('planWrap');
   if(!w)return;

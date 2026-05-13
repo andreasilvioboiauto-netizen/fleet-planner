@@ -113,8 +113,9 @@ header{background:var(--surf);border-bottom:1px solid var(--border);min-height:5
 [data-theme="light"] .plan-nav button{background:rgba(15,31,61,.18);color:var(--navy);border-color:rgba(15,31,61,.2)}
 [data-theme="medium"] .plan-nav button{background:rgba(15,25,45,.4)}
 @media(max-width:768px){
-.plan-nav.left,.plan-nav.right{display:none}
-.plan-nav.bottom{display:none}
+.plan-nav.left{left:4px}
+.plan-nav.right{right:4px}
+.plan-nav button{width:30px;height:30px;font-size:14px;opacity:.5}
 }
 .ptable{border-collapse:collapse;table-layout:fixed;min-width:max-content}
 .mhdr{background:var(--navy2);color:var(--accent);font-size:10px;font-weight:600;letter-spacing:.7px;text-transform:uppercase;text-align:center;height:22px;border-bottom:1px solid var(--border);position:sticky;top:0;z-index:30;user-select:none}
