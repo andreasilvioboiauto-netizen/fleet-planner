@@ -424,7 +424,7 @@ function renderBar(r){
     const sl=seg===aSi?2:0, er=se===aEi?2:0;
     bar.style.cssText=`left:${sl}px;width:calc(${(se-seg+1)*28}px - ${sl+er}px);background:${color}`;
     if(seg===aSi){
-      const lbl=r.cognome?`${r.cognome}${r.nome?' '+r.nome.charAt(0)+'.':''}`:(r.stato==='manutenzione'?'Manutenzione':r.stato==='opzione'?'Opzione':'—');
+      const lbl=r.cognome?`${r.cognome}${r.nome?' '+r.nome.charAt(0)+'.':''}`:(r.stato==='manutenzione'?'Manutenzione':r.stato==='opzione'?'Prestito':'—');
       bar.innerHTML=`<span class="rbar-lbl">${lbl}</span>`;
     }
     bar.addEventListener('mousedown',e=>{e.stopPropagation();});
@@ -859,7 +859,9 @@ function renderList(){
     const payS=r.payStatus||'nonpagato';
     const ctrStr=r.ctrNum?`CTR-${(r.startKey||'').split('-')[0]||curYear}-${p2(r.ctrNum)}`:'—';
     const tr=document.createElement('tr');
-    tr.innerHTML=`<td style="font-family:'DM Mono',monospace;font-size:10px;color:var(--text3)">${ctrStr}</td><td><strong>${r.cognome||'—'}</strong> ${r.nome||''}<br><span style="font-size:10px;color:var(--text3)">${r.cf||''}</span></td><td style="font-family:'DM Mono',monospace;font-size:10px;color:var(--accent)">${car?car.targa:'—'}</td><td>${fd(r.startKey)}</td><td>${fd(r.endKey)}</td><td>${days}</td><td style="font-family:'DM Mono',monospace">${tot?`€ ${tot.toFixed(0)}`:'—'}</td><td><span class="badge ${payS}">${payS}</span></td><td><span class="badge ${r.stato||'noleggio'}">${r.stato||'noleggio'}</span></td><td style="color:var(--text3);font-size:11px;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${r.note||''}</td>`;
+    const statoVal=r.stato||'noleggio';
+    const statoLbl=statoVal==='opzione'?'prestito':statoVal;
+    tr.innerHTML=`<td style="font-family:'DM Mono',monospace;font-size:10px;color:var(--text3)">${ctrStr}</td><td><strong>${r.cognome||'—'}</strong> ${r.nome||''}<br><span style="font-size:10px;color:var(--text3)">${r.cf||''}</span></td><td style="font-family:'DM Mono',monospace;font-size:10px;color:var(--accent)">${car?car.targa:'—'}</td><td>${fd(r.startKey)}</td><td>${fd(r.endKey)}</td><td>${days}</td><td style="font-family:'DM Mono',monospace">${tot?`€ ${tot.toFixed(0)}`:'—'}</td><td><span class="badge ${payS}">${payS}</span></td><td><span class="badge ${statoVal}">${statoLbl}</span></td><td style="color:var(--text3);font-size:11px;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${r.note||''}</td>`;
     tr.onclick=()=>openEditRental(r.id);
     tbody.appendChild(tr);
   });
@@ -1256,6 +1258,29 @@ function exportMonthPDF(){
   w.document.close();
   setTimeout(()=>w.print(),400);
 }
+
+// ---
+// TEMA
+// ---
+function setTheme(t){
+  if(!['light','medium','dark'].includes(t)) t='dark';
+  document.documentElement.setAttribute('data-theme',t);
+  try{localStorage.setItem('fp_theme',t)}catch(_){}
+  document.querySelectorAll('[data-theme-btn]').forEach(b=>{
+    b.classList.toggle('on', b.getAttribute('data-theme-btn')===t);
+  });
+}
+// Applica subito tema salvato e marca il bottone attivo (anche se l'app è in login)
+(function initTheme(){
+  let t='dark';
+  try{t=localStorage.getItem('fp_theme')||'dark'}catch(_){}
+  // Aspetto che il DOM sia pronto per marcare il bottone
+  if(document.readyState==='loading'){
+    document.addEventListener('DOMContentLoaded',()=>setTheme(t));
+  } else {
+    setTheme(t);
+  }
+})();
 
 // ---
 // UTILS
