@@ -518,7 +518,7 @@ header{padding:6px 10px;gap:6px}
 </select>
 <div class="spacer" style="flex:1"></div>
 <span id="prvCount" style="font-size:11px;color:var(--text2)"></span>
-<button class="hbtn accent" onclick="openPreventivo(null)">+ Nuovo Preventivo</button>
+<span style="font-size:10px;color:var(--text3)">Per creare un preventivo: drag sul planning → "💼 Salva come Preventivo"</span>
 </div>
 <div class="list-wrap">
 <table class="rtable">
@@ -812,10 +812,13 @@ header{padding:6px 10px;gap:6px}
 <div class="mfoot">
 <button class="btn btn-danger" id="btnDel" onclick="deleteRental()" style="display:none;margin-right:auto">✕ Elimina</button>
 <button class="btn btn-ghost" id="btnUnlock" onclick="unlockRental()" style="display:none">🔓 Riapri</button>
+<button class="btn btn-green" id="btnConvert" onclick="convertCurrentPreventivoToRental()" style="display:none">→ Converti in Noleggio</button>
 <button class="btn btn-ghost" onclick="closeM('mRental')">Annulla</button>
 <button class="btn btn-ghost" onclick="printPrivacyStandalone()">🔒 Privacy</button>
-<button class="btn btn-teal" onclick="printContract()">🖨 Contratto</button>
-<button class="btn btn-accent" onclick="saveRental()">✓ Salva</button>
+<button class="btn btn-ghost" id="btnPrintPrv" onclick="printPreventivoFromRentalModal()">🖨 Stampa Preventivo</button>
+<button class="btn btn-teal" id="btnPrintCtr" onclick="printContract()">🖨 Stampa Contratto</button>
+<button class="btn btn-ghost" id="btnSavePrv" onclick="saveAsPreventivo()" style="background:rgba(245,158,11,.15);color:var(--accent2);border:1px solid rgba(245,158,11,.4)">💼 Salva come Preventivo</button>
+<button class="btn btn-accent" id="btnSaveRental" onclick="saveRental()">✓ Salva Noleggio</button>
 </div>
 </div>
 </div>
@@ -878,79 +881,6 @@ header{padding:6px 10px;gap:6px}
 <button class="btn btn-danger" id="btnCliDel" onclick="deleteClient()" style="display:none;margin-right:auto">✕ Elimina</button>
 <button class="btn btn-ghost" onclick="closeM('mClient')">Annulla</button>
 <button class="btn btn-accent" onclick="saveClient()">✓ Salva</button>
-</div>
-</div>
-</div>
-
-<!-- ══ MODAL PREVENTIVO ══ -->
-<div class="overlay" id="mPreventivo">
-<div class="modal">
-<div class="mhd">
-<div><div class="mtitle" id="mPrvTitle">Nuovo Preventivo</div><div class="msub">Documento non vincolante, da convertire in contratto al momento della firma</div></div>
-<button class="mclose" onclick="closeM('mPreventivo')">✕</button>
-</div>
-<div class="mbody">
-
-<div class="fsec">
-<div class="fsec-t">Cliente</div>
-<div class="fg">
-<div class="ff"><label>Tipo</label>
-<select id="pv_tipo"><option value="">—</option><option>Privato</option><option>Azienda</option></select></div>
-<div class="ff"><label>Cognome / Rag. Soc. *</label><input type="text" id="pv_cognome"></div>
-<div class="ff"><label>Nome</label><input type="text" id="pv_nome"></div>
-<div class="ff"><label>C.F. / P.IVA</label><input type="text" id="pv_cf"></div>
-<div class="ff s2"><label>Indirizzo</label><input type="text" id="pv_indirizzo"></div>
-<div class="ff"><label>Telefono</label><input type="tel" id="pv_tel"></div>
-<div class="ff"><label>Email</label><input type="email" id="pv_email"></div>
-</div>
-</div>
-
-<div class="fsec">
-<div class="fsec-t">Veicolo e Periodo</div>
-<div class="fg">
-<div class="ff s2"><label>Auto *</label>
-<select id="pv_car" onchange="pvCarChanged()"><option value="">— Seleziona auto —</option></select></div>
-<div class="ff"><label>Data inizio *</label><input type="date" id="pv_start" onchange="prvCalcTot()"></div>
-<div class="ff"><label>Data fine *</label><input type="date" id="pv_end" onchange="prvCalcTot()"></div>
-<div class="ff"><label>Giorni</label><div class="ro-val" id="pv_days">—</div></div>
-<div class="ff"><label>Stato</label>
-<select id="pv_stato">
-<option value="in_attesa">⏳ In attesa</option>
-<option value="accettato">✅ Accettato</option>
-<option value="rifiutato">❌ Rifiutato</option>
-<option value="scaduto">⌛ Scaduto</option>
-</select></div>
-</div>
-</div>
-
-<div class="fsec">
-<div class="fsec-t">Corrispettivo <span id="pv_suggest" style="font-size:10px;color:var(--text3);font-weight:400;text-transform:none;letter-spacing:0"></span></div>
-<div class="fg t3">
-<div class="ff"><label>Prezzo/giorno (€)</label><input type="number" id="pv_prezzo" placeholder="50" oninput="prvCalcTot()"></div>
-<div class="ff"><label>Sconto %</label><input type="number" id="pv_sp" placeholder="0" oninput="prvCalcTot()"></div>
-<div class="ff"><label>Sconto € fisso</label><input type="number" id="pv_se" placeholder="0" oninput="prvCalcTot()"></div>
-</div>
-<div class="pcalc" id="pv_calc" style="display:none">
-<div class="prow"><span>Imponibile</span><span id="pv_base">—</span></div>
-<div class="prow"><span>Sconto</span><span id="pv_sc">—</span></div>
-<div class="prow"><span>IVA 22%</span><span id="pv_iva">—</span></div>
-<div class="prow tot"><span>TOTALE IVA inclusa</span><span id="pv_tot">—</span></div>
-</div>
-</div>
-
-<div class="fsec">
-<div class="fsec-t">Note</div>
-<div class="ff"><textarea id="pv_note" placeholder="Note aggiuntive per il cliente (optional inclusi, riserve, condizioni speciali…)"></textarea></div>
-</div>
-
-</div>
-<div class="mfoot">
-<button class="btn btn-danger" id="btnPrvDel" onclick="deletePreventivo()" style="display:none;margin-right:auto">✕ Elimina</button>
-<button class="btn btn-green" id="btnPrvConvert" onclick="convertPreventivoToRental()" style="display:none">→ Converti in Noleggio</button>
-<button class="btn btn-ghost" onclick="closeM('mPreventivo')">Annulla</button>
-<button class="btn btn-ghost" onclick="printPrivacyFromPreventivo()">🔒 Privacy</button>
-<button class="btn btn-teal" onclick="printPreventivo()">🖨 Stampa Preventivo</button>
-<button class="btn btn-accent" onclick="savePreventivo()">✓ Salva</button>
 </div>
 </div>
 </div>

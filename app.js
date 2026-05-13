@@ -658,6 +658,10 @@ function openNewRental(cid,si,ei){
   // Stato operativo iniziale = prenotato
   refreshOpStatusUI(null);
   refreshLockUI(false);
+  // Modalità default = rental (al primo apertura). NB: se sto aprendo questo modal
+  // tramite openPreventivo, refreshFooterMode('prev') verrà chiamata DOPO da openPreventivo.
+  if(!curPrvId) curPrvId=null;
+  refreshFooterMode('rental');
   document.getElementById('mRental').classList.add('open');
   calcTot();
 }
@@ -717,6 +721,9 @@ function openEditRental(rid,focus){
   refreshLockUI(op==='chiuso' && !window._editUnlocked);
   // Reset flag unlock al cambio rental
   window._editUnlocked=false;
+  // Sto modificando un noleggio reale: assicuro modalità rental
+  curPrvId=null;
+  refreshFooterMode('rental');
 
   document.getElementById('mRental').classList.add('open');
 
@@ -957,6 +964,11 @@ function toggleRestituzioneByOther(){
 }
 
 async function deleteRental(){
+  // Se siamo in modalità preventivo, elimino il preventivo invece del noleggio
+  const mode=document.getElementById('btnDel')?.getAttribute('data-mode');
+  if(mode==='prev' && curPrvId){
+    return deleteCurrentPreventivo();
+  }
   if(!curRid||!confirm("Eliminare questo noleggio?"))return;
   rentals=rentals.filter(r=>r.id!==curRid);
   await fbDelete('rentals',curRid);
@@ -1104,6 +1116,10 @@ function buildPrivacyHTML({cognome,nome,cf,indirizzo,docRef,docType}){
 // ---
 // PREVENTIVI
 // ---
+// Stato: il modal noleggio è "modale" — può lavorare in due modalità:
+//  - mode='rental'  → si comporta come prima (salva noleggio, stampa contratto)
+//  - mode='prev'    → siamo nel flusso preventivo (salva come preventivo, stampa preventivo)
+// curPrvId è popolato solo quando stiamo modificando un preventivo esistente.
 let curPrvId=null;
 
 function renderPreventivi(){
@@ -1112,19 +1128,18 @@ function renderPreventivi(){
   let list=[...preventivi];
   if(q)list=list.filter(p=>(p.cognome||'').toLowerCase().includes(q)||(p.nome||'').toLowerCase().includes(q)||(p.cf||'').toLowerCase().includes(q));
   if(stF)list=list.filter(p=>(p.stato||'in_attesa')===stF);
-  // Aggiorna stato "scaduto" automaticamente per quelli passati la validità
+  // Aggiorna stato "scaduto" automaticamente
   const today=dk(TODAY);
   list.forEach(p=>{
     if((p.stato||'in_attesa')==='in_attesa' && p.validUntil && p.validUntil<today){
       p.stato='scaduto';
-      // Non salvo in firebase qui per non far troppi write; il salvataggio avviene se l'utente apre/modifica
     }
   });
   list.sort((a,b)=>(b.dataEmiss||'').localeCompare(a.dataEmiss||''));
   const tbody=document.getElementById('prvBody'); if(!tbody)return;
   tbody.innerHTML='';
   if(!list.length){
-    tbody.innerHTML='<tr><td colspan="9" style="text-align:center;color:var(--text2);padding:24px">Nessun preventivo. Creane uno con il tasto in alto a destra.</td></tr>';
+    tbody.innerHTML='<tr><td colspan="9" style="text-align:center;color:var(--text2);padding:24px">Nessun preventivo. Crea un preventivo facendo drag sul planning e poi clicca "💼 Salva come Preventivo".</td></tr>';
     document.getElementById('prvCount').textContent='0 preventivi';
     return;
   }
@@ -1142,187 +1157,141 @@ function renderPreventivi(){
   document.getElementById('prvCount').textContent=`${list.length} preventivi`;
 }
 
+// Apre il modal noleggio in modalità "preventivo" precaricando i dati del PRV
 function openPreventivo(id){
+  const p=preventivi.find(x=>x.id===id); if(!p)return;
+  const car=cars.find(c=>c.id===p.carId);
+  // Se le date del preventivo sono in un altro anno, cambio anno
+  const prvYear=parseInt((p.startKey||'').split('-')[0],10);
+  if(prvYear && prvYear!==curYear){
+    curYear=prvYear;
+    document.getElementById('yearVal').textContent=curYear;
+    DAYS=getDays(curYear);
+    buildTable();
+  }
+  const si=DAYS.findIndex(d=>dk(d)===p.startKey);
+  const ei=DAYS.findIndex(d=>dk(d)===p.endKey);
+  if(si<0||ei<0){
+    toast('Date del preventivo non valide','err');
+    return;
+  }
+  // Apro il modal noleggio "vuoto" come se stessi creando un nuovo noleggio
+  // ma con curPrvId valorizzato e mode='prev'
   curPrvId=id;
-  const p=id?preventivi.find(x=>x.id===id):null;
-  document.getElementById('mPrvTitle').textContent=p?'Modifica Preventivo':'Nuovo Preventivo';
-  // Reset campi
-  const fields=['pv_cognome','pv_nome','pv_cf','pv_indirizzo','pv_tel','pv_email','pv_tipo','pv_start','pv_end','pv_prezzo','pv_sp','pv_se','pv_note'];
-  fields.forEach(fid=>{const el=document.getElementById(fid);if(el)el.value=''});
-  // Popola select auto
-  const sel=document.getElementById('pv_car');
-  if(sel){
-    sel.innerHTML='<option value="">— Seleziona auto —</option>'+cars.map(c=>`<option value="${c.id}">${c.targa} — ${c.model||''} ${c.cat?'(Cat. '+c.cat+')':''}</option>`).join('');
-  }
-  if(p){
-    document.getElementById('pv_cognome').value=p.cognome||'';
-    document.getElementById('pv_nome').value=p.nome||'';
-    document.getElementById('pv_cf').value=p.cf||'';
-    document.getElementById('pv_indirizzo').value=p.indirizzo||'';
-    document.getElementById('pv_tel').value=p.tel||'';
-    document.getElementById('pv_email').value=p.email||'';
-    document.getElementById('pv_tipo').value=p.tipo||'';
-    document.getElementById('pv_car').value=p.carId||'';
-    document.getElementById('pv_start').value=p.startKey||'';
-    document.getElementById('pv_end').value=p.endKey||'';
-    document.getElementById('pv_prezzo').value=p.prezzo||'';
-    document.getElementById('pv_sp').value=p.sp||'';
-    document.getElementById('pv_se').value=p.se||'';
-    document.getElementById('pv_note').value=p.note||'';
-    document.getElementById('pv_stato').value=p.stato||'in_attesa';
-    document.getElementById('btnPrvDel').style.display='flex';
-    document.getElementById('btnPrvConvert').style.display=(p.stato==='accettato'||p.stato==='in_attesa')?'flex':'none';
+  openNewRental(p.carId,si,ei);
+  // Reimposto subito footer in modalità preventivo per evitare flicker
+  refreshFooterMode('prev', p.stato);
+  // Adesso precompilo i campi cliente/prezzo dai dati del preventivo
+  setTimeout(()=>{
+    const s=(fid,v)=>{const el=document.getElementById(fid);if(el)el.value=v||''};
+    s('f_cognome',p.cognome); s('f_nome',p.nome); s('f_cf',p.cf);
+    s('f_indirizzo',p.indirizzo); s('f_tel',p.tel); s('f_email',p.email);
+    s('f_tipo',p.tipo);
+    s('f_prezzo',p.prezzo); s('f_sp',p.sp); s('f_se',p.se);
+    s('f_note',p.note);
+    calcTot();
+    // Aggiorno il titolo del modal e i bottoni
+    const prvStr=`PRV-${(p.dataEmiss||'').split('-')[0]||curYear}-${p2(p.prvNum||0)}`;
+    document.getElementById('mRentalTitle').textContent='Preventivo '+prvStr;
+    document.getElementById('mRentalSub').textContent=car?`${car.targa} — ${car.model||''} · Valido fino al ${fd(p.validUntil)} · Stato: ${p.stato||'in_attesa'}`:'';
+    refreshFooterMode('prev', p.stato);
+  },100);
+}
+
+// Mostra/nasconde i bottoni del footer del modal noleggio in base alla modalità
+// mode: 'rental' (default) | 'prev'
+// prvStato: per mode='prev', stato corrente del preventivo (in_attesa/accettato/rifiutato/scaduto)
+function refreshFooterMode(mode, prvStato){
+  const isPrev = mode==='prev';
+  // In modalità preventivo: nascondo "Stampa Contratto" e "Salva Noleggio",
+  // mostro "Stampa Preventivo" e "Salva come Preventivo".
+  // In modalità noleggio: l'opposto + faccio comunque vedere "Salva come Preventivo"
+  // perché dal drag-create posso decidere di salvare come PRV.
+  const btnPrintCtr=document.getElementById('btnPrintCtr');
+  const btnPrintPrv=document.getElementById('btnPrintPrv');
+  const btnSavePrv=document.getElementById('btnSavePrv');
+  const btnSaveRental=document.getElementById('btnSaveRental');
+  const btnConvert=document.getElementById('btnConvert');
+  const btnDel=document.getElementById('btnDel');
+
+  if(isPrev){
+    // Modalità preventivo (sto modificando un PRV esistente)
+    if(btnPrintCtr) btnPrintCtr.style.display='none';
+    if(btnPrintPrv) btnPrintPrv.style.display='flex';
+    if(btnSavePrv){ btnSavePrv.style.display='flex'; btnSavePrv.textContent='💼 Salva Preventivo'; }
+    if(btnSaveRental) btnSaveRental.style.display='none';
+    if(btnConvert) btnConvert.style.display=(prvStato==='in_attesa'||prvStato==='accettato')?'flex':'none';
+    if(btnDel) btnDel.style.display='flex'; // riuso btnDel per cancellare il PRV
+    btnDel?.setAttribute('data-mode','prev');
   } else {
-    // Nuovo: default oggi + giorni di validità
-    document.getElementById('pv_stato').value='in_attesa';
-    document.getElementById('btnPrvDel').style.display='none';
-    document.getElementById('btnPrvConvert').style.display='none';
+    // Modalità noleggio (drag/edit normale)
+    if(btnPrintCtr) btnPrintCtr.style.display='flex';
+    if(btnPrintPrv) btnPrintPrv.style.display='flex';
+    if(btnSavePrv){ btnSavePrv.style.display='flex'; btnSavePrv.textContent='💼 Salva come Preventivo'; }
+    if(btnSaveRental) btnSaveRental.style.display='flex';
+    if(btnConvert) btnConvert.style.display='none';
+    btnDel?.setAttribute('data-mode','rental');
   }
-  prvCalcTot();
-  document.getElementById('mPreventivo').classList.add('open');
 }
 
-function prvCalcTot(){
-  const sv=gv('pv_start'), ev=gv('pv_end');
-  let days=0;
-  if(sv && ev){
-    const sd=new Date(sv), ed=new Date(ev);
-    days=Math.max(1,Math.round((ed-sd)/86400000)+1);
-  }
-  const p=parseFloat(gv('pv_prezzo'))||0;
-  const sp=parseFloat(gv('pv_sp'))||0, se2=parseFloat(gv('pv_se'))||0;
-  const base=days*p, sc=se2>0?se2:base*sp/100, net=base-sc, iva=net*.22, tot=net+iva;
-  const out=document.getElementById('pv_calc');
-  const dd=document.getElementById('pv_days');
-  if(dd)dd.textContent=days?`${days} gg`:'—';
-  if(!out)return;
-  if(!p||!days){out.style.display='none';return}
-  out.style.display='block';
-  document.getElementById('pv_base').textContent=`€ ${base.toFixed(2)}`;
-  document.getElementById('pv_sc').textContent=sc>0?`- € ${sc.toFixed(2)}`:'—';
-  document.getElementById('pv_iva').textContent=`€ ${iva.toFixed(2)}`;
-  document.getElementById('pv_tot').textContent=`€ ${tot.toFixed(2)}`;
-  // Suggerimento prezzo se auto selezionata e ha categoria
-  const carId=gv('pv_car');
-  const car=cars.find(c=>c.id===carId);
-  const sg=document.getElementById('pv_suggest');
-  if(car && car.cat && sv){
-    const pp=getPrezzoSuggerito(car.cat,sv);
-    const season=getStagione(sv);
-    if(pp>0 && sg) sg.innerHTML=`Suggerito: <strong style="color:var(--accent)">€${pp}/gg</strong> · Cat. ${car.cat} · Stagione ${season}`;
-    else if(sg) sg.textContent=`(nessuna tariffa per cat. ${car.cat} stagione ${season})`;
-  } else if(sg) sg.textContent='';
-}
-
-function pvCarChanged(){
-  const carId=gv('pv_car');
-  const car=cars.find(c=>c.id===carId);
-  const sv=gv('pv_start');
-  if(car && car.cat && sv){
-    const pp=getPrezzoSuggerito(car.cat,sv);
-    const inp=document.getElementById('pv_prezzo');
-    if(pp>0 && inp && !inp.value) inp.value=pp;
-  }
-  prvCalcTot();
-}
-
-function savePreventivo(){
-  const startKey=gv('pv_start'), endKey=gv('pv_end');
-  if(!gv('pv_cognome')){toast('Inserisci almeno il cognome','err');return}
-  if(!gv('pv_car')){toast('Seleziona l\'auto','err');return}
-  if(!startKey || !endKey){toast('Inserisci le date','err');return}
-  const sd=new Date(startKey), ed=new Date(endKey);
-  if(ed<sd){toast('La data di fine deve essere dopo l\'inizio','err');return}
+// Salva i campi del modal noleggio come PREVENTIVO (anziché come noleggio)
+function saveAsPreventivo(){
+  if(!gv('f_cognome')){toast('Inserisci almeno il cognome del cliente','err');return}
+  const sk=document.getElementById('dStart')?.value||dk(DAYS[curSi]);
+  const ek=document.getElementById('dEnd')?.value||dk(DAYS[curEi]);
+  if(!sk||!ek){toast('Date mancanti','err');return}
+  const sd=new Date(sk), ed=new Date(ek);
   const days=Math.max(1,Math.round((ed-sd)/86400000)+1);
-  const p=parseFloat(gv('pv_prezzo'))||0;
-  const sp=parseFloat(gv('pv_sp'))||0, se2=parseFloat(gv('pv_se'))||0;
+  const p=parseFloat(gv('f_prezzo'))||0;
+  const sp=parseFloat(gv('f_sp'))||0, se2=parseFloat(gv('f_se'))||0;
   const base=days*p, sc=se2>0?se2:base*sp/100, net=base-sc, iva=net*.22, tot=net+iva;
   const today=dk(TODAY);
-  // Validità: oggi + N giorni
   const vd=settings.preventivoValidityDays||7;
-  const validUntil=new Date(TODAY.getTime()+vd*86400000);
-  const validUntilKey=dk(validUntil);
+  const validUntilKey=dk(new Date(TODAY.getTime()+vd*86400000));
   const existing=curPrvId?preventivi.find(x=>x.id===curPrvId):null;
   const obj={
     id:curPrvId||'p'+Date.now(),
     prvNum:existing?.prvNum||prvCounter,
     dataEmiss:existing?.dataEmiss||today,
     validUntil:existing?.validUntil||validUntilKey,
-    carId:gv('pv_car'),
-    startKey, endKey, days,
-    cognome:gv('pv_cognome'), nome:gv('pv_nome'), cf:gv('pv_cf'),
-    indirizzo:gv('pv_indirizzo'), tel:gv('pv_tel'), email:gv('pv_email'),
-    tipo:gv('pv_tipo'),
-    prezzo:gv('pv_prezzo'), sp:gv('pv_sp'), se:gv('pv_se'),
+    carId:curCid,
+    startKey:sk, endKey:ek, days,
+    cognome:gv('f_cognome'), nome:gv('f_nome'), cf:gv('f_cf'),
+    indirizzo:gv('f_indirizzo'), tel:gv('f_tel'), email:gv('f_email'),
+    tipo:gv('f_tipo'),
+    prezzo:gv('f_prezzo'), sp:gv('f_sp'), se:gv('f_se'),
     totale:p?+tot.toFixed(2):0,
-    note:gv('pv_note'),
-    stato:gv('pv_stato')||'in_attesa'
+    note:gv('f_note'),
+    stato:existing?.stato||'in_attesa'
   };
   if(!curPrvId){prvCounter++; fbSet('meta','prv',{value:prvCounter});}
   if(curPrvId){const i=preventivi.findIndex(x=>x.id===curPrvId);if(i>=0)preventivi[i]=obj}
   else preventivi.push(obj);
   fbSet('preventivi',obj.id,obj);
-  curPrvId=obj.id; // memorizzo per stampa successiva
-  closeM('mPreventivo');
-  renderPreventivi();
+  curPrvId=obj.id;
+  closeM('mRental');
   toast('Preventivo salvato ✓');
-}
-
-async function deletePreventivo(){
-  if(!curPrvId||!confirm('Eliminare questo preventivo?'))return;
-  preventivi=preventivi.filter(p=>p.id!==curPrvId);
-  await fbDelete('preventivi',curPrvId);
-  closeM('mPreventivo'); renderPreventivi(); toast('Eliminato');
-}
-
-// Converte un preventivo in un noleggio (apre il modal noleggio precompilato)
-function convertPreventivoToRental(){
-  const p=preventivi.find(x=>x.id===curPrvId); if(!p)return;
-  if(!confirm(`Convertire questo preventivo nel noleggio definitivo?\nIl preventivo sarà marcato come "accettato".`))return;
-  // Marca come accettato
-  p.stato='accettato';
-  fbSet('preventivi',p.id,p);
-  // Apre il modal noleggio con i dati del preventivo
-  const carId=p.carId;
-  const si=DAYS.findIndex(d=>dk(d)===p.startKey);
-  const ei=DAYS.findIndex(d=>dk(d)===p.endKey);
-  if(si<0||ei<0){
-    toast('Le date del preventivo non rientrano nell\'anno corrente. Cambia anno e riprova.','err');
-    return;
+  // Se sono nella tab preventivi, ricarica
+  if(document.getElementById('page-preventivi')?.classList.contains('active')){
+    renderPreventivi();
   }
-  closeM('mPreventivo');
-  openNewRental(carId,si,ei);
-  // Precompilo i campi cliente e corrispettivo
-  setTimeout(()=>{
-    const s=(id,v)=>{const el=document.getElementById(id);if(el)el.value=v||''};
-    s('f_cognome',p.cognome); s('f_nome',p.nome); s('f_cf',p.cf);
-    s('f_indirizzo',p.indirizzo); s('f_tel',p.tel); s('f_email',p.email);
-    s('f_tipo',p.tipo);
-    s('f_prezzo',p.prezzo); s('f_sp',p.sp); s('f_se',p.se);
-    if(p.note){
-      const cur=gv('f_note');
-      s('f_note',cur?cur+'\nDa preventivo PRV-'+p2(p.prvNum)+': '+p.note:'Da preventivo PRV-'+p2(p.prvNum)+': '+p.note);
-    } else {
-      s('f_note','Da preventivo PRV-'+p2(p.prvNum));
-    }
-    calcTot();
-    toast('Preventivo convertito. Completa e salva il noleggio.');
-  },100);
 }
 
-// Stampa preventivo PDF (allega privacy in coda automaticamente)
-function printPreventivo(){
-  const car=cars.find(c=>c.id===gv('pv_car'));
-  const startKey=gv('pv_start'), endKey=gv('pv_end');
-  if(!gv('pv_cognome')||!car||!startKey||!endKey){
+// Stampa preventivo dai campi del modal noleggio (allega privacy in coda)
+function printPreventivoFromRentalModal(){
+  const car=cars.find(c=>c.id===curCid);
+  const sk=document.getElementById('dStart')?.value||dk(DAYS[curSi]);
+  const ek=document.getElementById('dEnd')?.value||dk(DAYS[curEi]);
+  if(!gv('f_cognome')||!car||!sk||!ek){
     toast('Compila almeno cognome, auto e date prima di stampare','err');
     return;
   }
-  const sd=new Date(startKey), ed=new Date(endKey);
+  const sd=new Date(sk), ed=new Date(ek);
   const days=Math.max(1,Math.round((ed-sd)/86400000)+1);
-  const p=parseFloat(gv('pv_prezzo'))||0;
-  const sp=parseFloat(gv('pv_sp'))||0, se2=parseFloat(gv('pv_se'))||0;
+  const p=parseFloat(gv('f_prezzo'))||0;
+  const sp=parseFloat(gv('f_sp'))||0, se2=parseFloat(gv('f_se'))||0;
   const base=days*p, sc=se2>0?se2:base*sp/100, net=base-sc, iva=net*.22, tot=net+iva;
+  // Se sto modificando un PRV esistente uso i suoi metadati, altrimenti uso prvCounter "preview"
   const existing=curPrvId?preventivi.find(x=>x.id===curPrvId):null;
   const prvNum=existing?.prvNum||prvCounter;
   const dataEmiss=existing?.dataEmiss||dk(TODAY);
@@ -1334,24 +1303,66 @@ function printPreventivo(){
   const html=`<div class="pdoc">
 <div class="p-hdr"><div><div class="p-agency">${ag}</div>${settings.address?`<div style="font-size:8pt;color:#555">${settings.address}</div>`:''}${settings.phone||settings.email?`<div style="font-size:8pt;color:#555">${[settings.phone,settings.email].filter(Boolean).join(' · ')}</div>`:''}${settings.piva?`<div style="font-size:8pt;color:#555">P.IVA: ${settings.piva}</div>`:''}</div><div style="text-align:right"><div style="font-size:11pt;font-weight:bold;color:#0f1f3d">${prvStr}</div><div style="font-size:8.5pt;color:#555">Emesso: ${fd(dataEmiss)}</div><div style="font-size:8.5pt;color:#555">Valido fino al: ${fd(validUntil)}</div></div></div>
 <div class="p-title">Preventivo di Noleggio Veicolo</div>
-<div class="p-sec"><div class="p-sec-t">Dati Cliente</div><div class="pgrid">${row('Cognome / Rag. Soc.',gv('pv_cognome'))}${row('Nome',gv('pv_nome'))}${row('C.F. / P.IVA',gv('pv_cf'))}${row('Tipo',gv('pv_tipo'))}${row('Indirizzo',gv('pv_indirizzo'),true)}${row('Telefono',gv('pv_tel'))}${row('Email',gv('pv_email'))}</div></div>
-<div class="p-sec"><div class="p-sec-t">Veicolo e Periodo</div><div class="pgrid t3">${row('Targa',car.targa)}${row('Modello',car.model||'—')}${row('Categoria',car.cat||'—')}${row('Data inizio',fd(startKey))}${row('Data fine',fd(endKey))}${row('N° giorni',days)}</div></div>
+<div class="p-sec"><div class="p-sec-t">Dati Cliente</div><div class="pgrid">${row('Cognome / Rag. Soc.',gv('f_cognome'))}${row('Nome',gv('f_nome'))}${row('C.F. / P.IVA',gv('f_cf'))}${row('Tipo',gv('f_tipo'))}${row('Indirizzo',gv('f_indirizzo'),true)}${row('Telefono',gv('f_tel'))}${row('Email',gv('f_email'))}</div></div>
+<div class="p-sec"><div class="p-sec-t">Veicolo e Periodo</div><div class="pgrid t3">${row('Targa',car.targa)}${row('Modello',car.model||'—')}${row('Categoria',car.cat||'—')}${row('Data inizio',fd(sk))}${row('Data fine',fd(ek))}${row('N° giorni',days)}</div></div>
 <div class="p-sec"><div class="p-sec-t">Corrispettivo Stimato</div><div class="pgrid t3">${row('Prezzo/giorno',p?`€ ${p.toFixed(2)}`:'—')}${row('Imponibile',`€ ${base.toFixed(2)}`)}${row('Sconto',sc>0?`€ ${sc.toFixed(2)}`:'—')}${row('Subtotale',`€ ${net.toFixed(2)}`)}${row('IVA 22%',`€ ${iva.toFixed(2)}`)}${row('Totale IVA inclusa',`€ ${tot.toFixed(2)}`)}</div><div class="p-tot"><strong>TOTALE PREVENTIVO IVA INCLUSA</strong><strong style="font-size:13pt;color:#0f1f3d">€ ${tot.toFixed(2)}</strong></div></div>
-${gv('pv_note')?`<div class="p-sec"><div class="p-sec-t">Note</div><div style="border:1px solid #ccc;padding:6px;font-size:9pt">${gv('pv_note')}</div></div>`:''}
+${gv('f_note')?`<div class="p-sec"><div class="p-sec-t">Note</div><div style="border:1px solid #ccc;padding:6px;font-size:9pt">${gv('f_note')}</div></div>`:''}
 <div class="p-sec"><div class="p-sec-t">Condizioni del preventivo</div><div class="p-clauses">
 <div>Il presente preventivo è valido fino al <strong>${fd(validUntil)}</strong> e non costituisce impegno contrattuale fino alla firma del contratto di noleggio definitivo.</div>
 <div style="margin-top:6px">L'importo è calcolato sulle tariffe in vigore alla data di emissione e include IVA al 22%. Eventuali optional, supplementi, cauzioni o penali non sono inclusi se non espressamente indicati in questo documento.</div>
 <div style="margin-top:6px">La disponibilità del veicolo è soggetta a conferma al momento della stipula del contratto.</div>
 ${settings.foro?`<div style="margin-top:6px">Per qualsiasi controversia le parti eleggono come foro competente il Tribunale di ${settings.foro}.</div>`:''}
 </div></div>
-<div class="p-sigs"><div><div class="p-sig-line"></div><div class="p-sig-lbl"><strong>${ag}</strong><br>Firma e timbro</div></div><div><div class="p-sig-line"></div><div class="p-sig-lbl"><strong>IL CLIENTE</strong><br>${gv('pv_cognome')||'___________'} ${gv('pv_nome')||''}<br>Per accettazione del preventivo</div></div></div>
+<div class="p-sigs"><div><div class="p-sig-line"></div><div class="p-sig-lbl"><strong>${ag}</strong><br>Firma e timbro</div></div><div><div class="p-sig-line"></div><div class="p-sig-lbl"><strong>IL CLIENTE</strong><br>${gv('f_cognome')||'___________'} ${gv('f_nome')||''}<br>Per accettazione del preventivo</div></div></div>
 <div style="text-align:center;font-size:7.5pt;color:#777;margin-top:10px">${prvStr} | Emesso il ${fd(dataEmiss)} | Valido fino al ${fd(validUntil)}</div>
-</div>${buildPrivacyHTML({cognome:gv('pv_cognome'),nome:gv('pv_nome'),cf:gv('pv_cf'),indirizzo:gv('pv_indirizzo'),docRef:prvStr,docType:'PREVENTIVO'})}`;
+</div>${buildPrivacyHTML({cognome:gv('f_cognome'),nome:gv('f_nome'),cf:gv('f_cf'),indirizzo:gv('f_indirizzo'),docRef:prvStr,docType:'PREVENTIVO'})}`;
   document.getElementById('parea').innerHTML=html;
   document.getElementById('parea').style.display='block';
   window.print();
   document.getElementById('parea').style.display='none';
 }
+
+// Converte il preventivo attualmente aperto nel modal in un noleggio
+function convertCurrentPreventivoToRental(){
+  if(!curPrvId){toast('Nessun preventivo da convertire','err');return}
+  const p=preventivi.find(x=>x.id===curPrvId); if(!p)return;
+  if(!confirm('Convertire questo preventivo nel noleggio definitivo?\nIl preventivo sarà marcato come "accettato" e si genererà un nuovo contratto (CTR).'))return;
+  // Marca preventivo come accettato
+  p.stato='accettato';
+  fbSet('preventivi',p.id,p);
+  // Aggiungo riferimento nelle note prima di salvare
+  const noteEl=document.getElementById('f_note');
+  if(noteEl){
+    const ref='Da preventivo PRV-'+p2(p.prvNum||0);
+    if(!(noteEl.value||'').includes(ref)){
+      noteEl.value=(noteEl.value?noteEl.value+'\n':'')+ref;
+    }
+  }
+  // Esco dalla "modalità preventivo": curPrvId va azzerato
+  // così saveRental crea un noleggio normale
+  curPrvId=null;
+  // Cambio header e footer
+  const car=cars.find(c=>c.id===curCid);
+  document.getElementById('mRentalTitle').textContent='Nuovo Noleggio (da preventivo)';
+  document.getElementById('mRentalSub').textContent=car?`${car.targa} — ${car.model||''}`:'';
+  refreshFooterMode('rental');
+  toast('Pronto a salvare come noleggio. Completa e clicca "✓ Salva Noleggio".');
+}
+
+// Elimina preventivo aperto nel modal noleggio (chiamata quando data-mode='prev')
+async function deleteCurrentPreventivo(){
+  if(!curPrvId)return;
+  if(!confirm('Eliminare questo preventivo?'))return;
+  preventivi=preventivi.filter(p=>p.id!==curPrvId);
+  await fbDelete('preventivi',curPrvId);
+  curPrvId=null;
+  closeM('mRental');
+  if(document.getElementById('page-preventivi')?.classList.contains('active')){
+    renderPreventivi();
+  }
+  toast('Preventivo eliminato');
+}
+
 
 // ---
 // LIST
