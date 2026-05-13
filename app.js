@@ -6,8 +6,44 @@ const RCOLS=['#2563eb','#0891b2','#059669','#d97706','#dc2626','#7c3aed','#db277
 const CATEGORIES=[['A','Economica'],['B','Compatta'],['C','Berlina/Familiare'],['D','SUV'],['E','Premium']];
 const SEASONS=['alta','media','bassa'];
 const SEASON_COLORS={alta:'#ef4444',media:'#f59e0b',bassa:'#10b981'};
+// Colore base della barra in base al tipo (stato del rental: noleggio/manutenzione/prestito)
+const TYPE_COLORS={noleggio:'#2563eb',manutenzione:'#f97316',opzione:'#8b5cf6'};
+// Stati operativi del singolo noleggio (separati dal tipo)
+const OP_STATUS={prenotato:'Prenotato',incorso:'In corso',chiuso:'Chiuso'};
+// Operatori predefiniti (compilano consegna/restituzione)
+const OPERATORI=['Silvio','Michele','Altro'];
 const DEFAULT_SETTINGS={
   agency:'',address:'',phone:'',email:'',piva:'',foro:'',clauses:'',
+  privacy:`INFORMATIVA SUL TRATTAMENTO DEI DATI PERSONALI (art. 13 Reg. UE 2016/679 - GDPR)
+
+Ai sensi del Regolamento (UE) 2016/679, Le forniamo le seguenti informazioni in merito al trattamento dei Suoi dati personali.
+
+1. TITOLARE DEL TRATTAMENTO
+Il Titolare del trattamento è l'Agenzia indicata in intestazione del presente documento, presso la sede legale ivi riportata.
+
+2. FINALITÀ E BASE GIURIDICA
+I Suoi dati personali (nome, cognome, codice fiscale/partita IVA, indirizzo, recapiti, numero e scadenza patente, estremi del documento di identità, dati relativi al veicolo noleggiato) saranno trattati per le seguenti finalità:
+a) esecuzione del contratto di noleggio veicolo (art. 6.1.b GDPR);
+b) adempimento di obblighi legali, fiscali e amministrativi (art. 6.1.c GDPR);
+c) gestione di eventuali contenziosi, sinistri o richieste di risarcimento (art. 6.1.f GDPR — legittimo interesse).
+
+3. NATURA DEL CONFERIMENTO
+Il conferimento dei dati per le finalità a) e b) è obbligatorio: l'eventuale rifiuto rende impossibile la stipula del contratto. Per le finalità di marketing il conferimento è facoltativo.
+
+4. MODALITÀ DI TRATTAMENTO
+I dati saranno trattati con strumenti cartacei e informatici, nel rispetto dei principi di liceità, correttezza, trasparenza e minimizzazione. Sono adottate misure di sicurezza adeguate per prevenire accessi non autorizzati, perdita o distruzione dei dati.
+
+5. CONSERVAZIONE
+I dati saranno conservati per il tempo necessario all'esecuzione del contratto e successivamente per gli ulteriori 10 anni previsti dalla normativa civilistica e fiscale.
+
+6. COMUNICAZIONE E DIFFUSIONE
+I dati potranno essere comunicati a: compagnie di assicurazione, forze dell'ordine in caso di sinistro o violazione del codice della strada, consulenti fiscali e legali, autorità competenti. I dati non saranno diffusi.
+
+7. DIRITTI DELL'INTERESSATO
+Lei ha diritto di chiedere al Titolare l'accesso ai propri dati, la rettifica, la cancellazione, la limitazione del trattamento, l'opposizione al trattamento, la portabilità. Ha inoltre diritto di proporre reclamo al Garante per la protezione dei dati personali (www.garanteprivacy.it).
+
+Per esercitare i Suoi diritti può contattare il Titolare ai recapiti indicati in intestazione.`,
+  preventivoValidityDays:7,
   // Lista dinamica di periodi. Ogni voce: {stagione:'alta'|'media'|'bassa', from:'MM-DD', to:'MM-DD', attivo:true}
   // I giorni NON coperti da nessun periodo attivo ricadono in 'bassa'.
   // In caso di sovrapposizione, vince la stagione con priorità più alta (alta > media > bassa).
@@ -22,9 +58,9 @@ let curYear=TODAY.getFullYear();
 let DAYS=[];
 
 // In-memory state (sincronizzato da Firebase)
-let cars=[], rentals=[], clients=[];
+let cars=[], rentals=[], clients=[], preventivi=[];
 let settings=JSON.parse(JSON.stringify(DEFAULT_SETTINGS));
-let ctrCounter=1;
+let ctrCounter=1, prvCounter=1;
 
 let listSortKey='inizio', listSortDir=-1;
 let drag=null, selColor=RCOLS[0];
@@ -69,17 +105,19 @@ async function fbDelete(col,id){
 async function fbLoadAll(){
   showSync('Caricamento...');
   try{
-    const [carsData, rentalsData, clientsData] = await Promise.all([
-      fbGetAll('cars'), fbGetAll('rentals'), fbGetAll('clients')
+    const [carsData, rentalsData, clientsData, prevData] = await Promise.all([
+      fbGetAll('cars'), fbGetAll('rentals'), fbGetAll('clients'), fbGetAll('preventivi')
     ]);
     const{db,doc,getDoc}=window._fb;
     const settingsSnap = await getDoc(doc(db,'users',uid(),'meta','settings'));
     const ctrSnap = await getDoc(doc(db,'users',uid(),'meta','ctr'));
+    const prvSnap = await getDoc(doc(db,'users',uid(),'meta','prv'));
 
     // Firebase è l'unica fonte di verità (niente fallback su localStorage per evitare dati fantasma)
     cars = carsData;
     rentals = rentalsData;
     clients = clientsData;
+    preventivi = prevData;
     // Pulizia cache vecchia (compat: se esiste localStorage da versioni precedenti, lo svuoto)
     try{
       localStorage.removeItem('fp_cars_'+uid());
@@ -92,6 +130,7 @@ async function fbLoadAll(){
     settings = mergeSettings(loaded);
 
     ctrCounter = ctrSnap.exists()?(ctrSnap.data().value||1):1;
+    prvCounter = prvSnap.exists()?(prvSnap.data().value||1):1;
 
     showSync('Sincronizzato');
     DAYS=getDays(curYear);
@@ -111,7 +150,11 @@ window._fbLoadAll=fbLoadAll;
 
 function mergeSettings(s){
   const out=JSON.parse(JSON.stringify(DEFAULT_SETTINGS));
-  ['agency','address','phone','email','piva','foro','clauses'].forEach(k=>{if(s[k]!==undefined)out[k]=s[k]});
+  ['agency','address','phone','email','piva','foro','clauses','privacy'].forEach(k=>{if(s[k]!==undefined)out[k]=s[k]});
+  if(s.preventivoValidityDays!==undefined){
+    const v=parseInt(s.preventivoValidityDays,10);
+    out.preventivoValidityDays=Number.isFinite(v)&&v>0?v:7;
+  }
   // Migrazione: il vecchio formato era {alta:{from,to}, media:{from,to}} -> converto in array
   if(s.stagioni){
     if(Array.isArray(s.stagioni)){
@@ -180,7 +223,8 @@ function doLogout(){
   if(!confirm("Esci dall'app?"))return;
   const{auth,signOut}=window._fb;
   signOut(auth).then(()=>{
-    cars=[];rentals=[];clients=[];
+    cars=[];rentals=[];clients=[];preventivi=[];
+    window._settingsReady=false;
     document.getElementById('logoutBtn').style.display='none';
     document.getElementById('syncIndicator').style.display='none';
   });
@@ -194,6 +238,43 @@ function p2(n){return String(n).padStart(2,'0')}
 function fd(s){if(!s||s==='—')return'—';if(typeof s==='string' && s.includes('-')){const[y,m,d]=s.split('-');return`${d}/${m}/${y}`}return s}
 function getDays(yr){const a=[];const d=new Date(yr,0,1);while(d.getFullYear()===yr){a.push(new Date(d));d.setDate(d.getDate()+1)}return a}
 function dIdx(key){return DAYS.findIndex(d=>dk(d)===key)}
+
+// Restituisce data+ora correnti in formato ISO locale (per input datetime-local)
+function nowLocalISO(){
+  const d=new Date();
+  return `${d.getFullYear()}-${p2(d.getMonth()+1)}-${p2(d.getDate())}T${p2(d.getHours())}:${p2(d.getMinutes())}`;
+}
+// Format datetime ISO -> "DD/MM/YYYY HH:MM" per visualizzazione
+function fdt(s){
+  if(!s)return'—';
+  // Accetta sia "YYYY-MM-DDTHH:MM" che "YYYY-MM-DDTHH:MM:SS"
+  const m=String(s).match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/);
+  if(!m)return s;
+  return `${m[3]}/${m[2]}/${m[1]} ${m[4]}:${m[5]}`;
+}
+
+// Calcola lo stato operativo del noleggio.
+// Se r.opStatus è valorizzato (esplicito), prevale. Altrimenti deduce da date/eventi:
+// - se ha consegnaAt + restituzioneAt -> chiuso
+// - se ha consegnaAt e non restituzioneAt -> incorso
+// - altrimenti deduce da date: oggi<inizio -> prenotato, oggi tra inizio e fine -> incorso, oggi>fine -> chiuso
+function getOpStatus(r){
+  if(!r)return'prenotato';
+  if(r.opStatus && OP_STATUS[r.opStatus]) return r.opStatus;
+  if(r.consegnaAt && r.restituzioneAt) return'chiuso';
+  if(r.consegnaAt) return'incorso';
+  const today=dk(TODAY);
+  if(r.endKey && r.endKey<today) return'chiuso';
+  if(r.startKey && r.startKey<=today && (!r.endKey||r.endKey>=today)) return'incorso';
+  return'prenotato';
+}
+
+function opStatusBadgeHTML(r){
+  const op=getOpStatus(r);
+  const labels={prenotato:'🕐 Prenotato',incorso:'🚗 In corso',chiuso:'✅ Chiuso'};
+  return `<span class="op-badge op-${op}">${labels[op]||op}</span>`;
+}
+
 
 // ---
 // STAGIONE / PREZZO
@@ -259,6 +340,7 @@ function showPage(id,btn){
   else if(id==='stats')renderStats();
   else if(id==='clients')renderClients();
   else if(id==='fleet')renderFleet();
+  else if(id==='preventivi')renderPreventivi();
   else if(id==='settings')loadSettings();
 }
 
@@ -412,29 +494,70 @@ function renderBar(r){
   if(aSi>DAYS.length-1||aEi<0)return;
   const row=document.querySelector(`tr[data-cid="${r.carId}"]`); if(!row)return;
   const cells=row.querySelectorAll('td.dcell');
-  const stColors={manutenzione:'#f97316',opzione:'#8b5cf6'};
-  const color=stColors[r.stato]||r.color||'#2563eb';
+  // Colore base = tipo del rental (stato classico noleggio/manutenzione/opzione)
+  const tipo=r.stato||'noleggio';
+  const color=TYPE_COLORS[tipo]||'#2563eb';
+  // Stato operativo (prenotato/incorso/chiuso) modifica solo l'aspetto, non il colore
+  const op=getOpStatus(r);
   let seg=aSi;
   while(seg<=aEi){
     const sm=DAYS[seg].getMonth(); let se=seg;
     while(se+1<=aEi&&DAYS[se+1].getMonth()===sm)se++;
     const c0=cells[seg]; if(!c0){seg=se+1;continue;}
     const bar=document.createElement('div');
-    bar.className='rbar'; bar.dataset.rid=r.id;
+    bar.className=`rbar rbar-${tipo} op-${op}`;
+    bar.dataset.rid=r.id;
     const sl=seg===aSi?2:0, er=se===aEi?2:0;
     bar.style.cssText=`left:${sl}px;width:calc(${(se-seg+1)*28}px - ${sl+er}px);background:${color}`;
     if(seg===aSi){
-      const lbl=r.cognome?`${r.cognome}${r.nome?' '+r.nome.charAt(0)+'.':''}`:(r.stato==='manutenzione'?'Manutenzione':r.stato==='opzione'?'Prestito':'—');
-      bar.innerHTML=`<span class="rbar-lbl">${lbl}</span>`;
+      const lbl=r.cognome?`${r.cognome}${r.nome?' '+r.nome.charAt(0)+'.':''}`:(tipo==='manutenzione'?'Manutenzione':tipo==='opzione'?'Prestito':'—');
+      // Pallino "live" per i noleggi in corso (solo sul primo segmento)
+      const liveDot = op==='incorso' ? '<span class="rbar-live" title="In corso"></span>' : '';
+      bar.innerHTML=`${liveDot}<span class="rbar-lbl">${lbl}</span>`;
     }
     bar.addEventListener('mousedown',e=>{e.stopPropagation();});
     bar.addEventListener('touchstart',e=>{e.stopPropagation();},{passive:true});
     bar.addEventListener('touchend',e=>{e.stopPropagation();e.preventDefault();openEditRental(r.id);});
     bar.addEventListener('click',e=>{e.stopPropagation();openEditRental(r.id)});
-    bar.title=(r.cognome||'')+(r.nome?' '+r.nome:'')+' | '+fd(r.startKey)+' → '+fd(r.endKey);
-    if(new Date(r.endKey)<TODAY){bar.style.opacity='0.4';bar.style.filter='grayscale(40%)';}
+    // Click destro (desktop): menu rapido consegna/restituzione
+    bar.addEventListener('contextmenu',e=>{e.preventDefault();e.stopPropagation();openBarMenu(e,r.id);});
+    const opLbl={prenotato:'Prenotato',incorso:'In corso',chiuso:'Chiuso'}[op]||op;
+    bar.title=`${r.cognome||''}${r.nome?' '+r.nome:''} | ${fd(r.startKey)} → ${fd(r.endKey)} | ${opLbl}`;
     c0.appendChild(bar); seg=se+1;
   }
+}
+
+// Menu contestuale desktop sulla barra del planning
+function openBarMenu(e,rid){
+  closeBarMenu();
+  const r=rentals.find(x=>x.id===rid); if(!r)return;
+  const op=getOpStatus(r);
+  const menu=document.createElement('div');
+  menu.id='barMenu';
+  menu.className='bar-menu';
+  menu.style.cssText=`top:${e.clientY+2}px;left:${e.clientX+2}px`;
+  const items=[
+    {label:'✏ Modifica', action:()=>openEditRental(rid)},
+    {label:'📤 Registra consegna', action:()=>openEditRental(rid,'consegna'), disabled: op==='chiuso' || !!r.consegnaAt},
+    {label:'📥 Registra restituzione', action:()=>openEditRental(rid,'restituzione'), disabled: op==='chiuso' || !r.consegnaAt}
+  ];
+  items.forEach(it=>{
+    const d=document.createElement('div');
+    d.className='bar-menu-item'+(it.disabled?' disabled':'');
+    d.textContent=it.label;
+    if(!it.disabled) d.onclick=()=>{closeBarMenu();it.action();};
+    menu.appendChild(d);
+  });
+  document.body.appendChild(menu);
+  // Riposiziona se esce dallo schermo
+  const rect=menu.getBoundingClientRect();
+  if(rect.right>window.innerWidth) menu.style.left=(window.innerWidth-rect.width-6)+'px';
+  if(rect.bottom>window.innerHeight) menu.style.top=(window.innerHeight-rect.height-6)+'px';
+  // Chiudi al prossimo click qualsiasi
+  setTimeout(()=>document.addEventListener('click',closeBarMenu,{once:true}),0);
+}
+function closeBarMenu(){
+  const m=document.getElementById('barMenu'); if(m)m.remove();
 }
 
 function onMD(e){
@@ -518,7 +641,8 @@ function openNewRental(cid,si,ei){
   document.getElementById('mRentalTitle').textContent='Nuovo Noleggio';
   document.getElementById('mRentalSub').textContent=`${car.targa} — ${car.model||''}`;
   setRO(si,ei); checkConflict(cid,si,ei,null);
-  const fields=['f_km','f_km_r','f_fuel','f_clean','f_tipo','f_cognome','f_nome','f_cf','f_indirizzo','f_tel','f_email','f_pat','f_pat_r','f_pat_s','f_a_cog','f_a_nom','f_a_pat','f_a_sca','f_prezzo','f_sp','f_se','f_cau','f_acconto','f_pag','f_d_carr','f_d_vetri','f_d_int','f_d_cer','f_d_note','f_r_carr','f_r_vetri','f_r_fuel','f_r_clean','f_r_note','f_pen','f_note'];
+  // Nota: f_km/f_km_r/f_fuel/f_clean ora vivono dentro la sezione consegna/restituzione
+  const fields=['f_km','f_km_r','f_fuel','f_clean','f_tipo','f_cognome','f_nome','f_cf','f_indirizzo','f_tel','f_email','f_pat','f_pat_r','f_pat_s','f_a_cog','f_a_nom','f_a_pat','f_a_sca','f_prezzo','f_sp','f_se','f_cau','f_acconto','f_pag','f_d_carr','f_d_vetri','f_d_int','f_d_cer','f_d_note','f_r_carr','f_r_vetri','f_r_int','f_r_cer','f_r_fuel','f_r_clean','f_r_note','f_pen','f_note','f_consegna_at','f_consegna_by','f_consegna_by_other','f_restituzione_at','f_restituzione_by','f_restituzione_by_other'];
   fields.forEach(id=>{const el=document.getElementById(id);if(el)el.value=''});
   document.getElementById('f_stato').value='noleggio';
   document.getElementById('f_pay_status').value='nonpagato';
@@ -531,8 +655,9 @@ function openNewRental(cid,si,ei){
   // Suggerimento prezzo automatico in base a categoria auto + stagione
   applyPrezzoSuggerito(car,dk(DAYS[si]));
 
-  selColor=car.color||RCOLS[rentals.length%RCOLS.length];
-  buildColorPick('colorPick',RCOLS,selColor,c=>selColor=c);
+  // Stato operativo iniziale = prenotato
+  refreshOpStatusUI(null);
+  refreshLockUI(false);
   document.getElementById('mRental').classList.add('open');
   calcTot();
 }
@@ -554,7 +679,7 @@ function applyPrezzoSuggerito(car,dateKey){
   }
 }
 
-function openEditRental(rid){
+function openEditRental(rid,focus){
   const r=rentals.find(x=>x.id===rid); if(!r)return;
   const car=cars.find(c=>c.id===r.carId);
   curRid=rid; curCid=r.carId;
@@ -564,7 +689,10 @@ function openEditRental(rid){
   document.getElementById('mRentalSub').textContent=car?`${car.targa} — ${car.model||''}`:'';
   setRO(curSi,curEi); checkConflict(r.carId,curSi,curEi,rid);
   const s=(id,v)=>{const el=document.getElementById(id);if(el)el.value=v||''};
-  s('f_km',r.km);s('f_km_r',r.kmR);s('f_fuel',r.fuel);s('f_clean',r.clean);s('f_tipo',r.tipo);s('f_cognome',r.cognome);s('f_nome',r.nome);s('f_cf',r.cf);s('f_indirizzo',r.indirizzo);s('f_tel',r.tel);s('f_email',r.email);s('f_pat',r.pat);s('f_pat_r',r.patR);s('f_pat_s',r.patS);s('f_a_cog',r.aCog);s('f_a_nom',r.aNom);s('f_a_pat',r.aPat);s('f_a_sca',r.aSca);s('f_prezzo',r.prezzo);s('f_sp',r.sp);s('f_se',r.se);s('f_cau',r.cau);s('f_acconto',r.acconto);s('f_pag',r.pag);s('f_d_carr',r.dCarr);s('f_d_vetri',r.dVetri);s('f_d_int',r.dInt);s('f_d_cer',r.dCer);s('f_d_note',r.dNote);s('f_r_carr',r.rCarr);s('f_r_vetri',r.rVetri);s('f_r_fuel',r.rFuel);s('f_r_clean',r.rClean);s('f_r_note',r.rNote);s('f_pen',r.pen);s('f_stato',r.stato||'noleggio');s('f_note',r.note);
+  s('f_km',r.km);s('f_km_r',r.kmR);s('f_fuel',r.fuel);s('f_clean',r.clean);s('f_tipo',r.tipo);s('f_cognome',r.cognome);s('f_nome',r.nome);s('f_cf',r.cf);s('f_indirizzo',r.indirizzo);s('f_tel',r.tel);s('f_email',r.email);s('f_pat',r.pat);s('f_pat_r',r.patR);s('f_pat_s',r.patS);s('f_a_cog',r.aCog);s('f_a_nom',r.aNom);s('f_a_pat',r.aPat);s('f_a_sca',r.aSca);s('f_prezzo',r.prezzo);s('f_sp',r.sp);s('f_se',r.se);s('f_cau',r.cau);s('f_acconto',r.acconto);s('f_pag',r.pag);s('f_d_carr',r.dCarr);s('f_d_vetri',r.dVetri);s('f_d_int',r.dInt);s('f_d_cer',r.dCer);s('f_d_note',r.dNote);s('f_r_carr',r.rCarr);s('f_r_vetri',r.rVetri);s('f_r_int',r.rInt);s('f_r_cer',r.rCer);s('f_r_fuel',r.rFuel);s('f_r_clean',r.rClean);s('f_r_note',r.rNote);s('f_pen',r.pen);s('f_stato',r.stato||'noleggio');s('f_note',r.note);
+  // Nuovi campi consegna/restituzione
+  s('f_consegna_at',r.consegnaAt);s('f_consegna_by',r.consegnaBy);s('f_consegna_by_other',r.consegnaByOther);
+  s('f_restituzione_at',r.restituzioneAt);s('f_restituzione_by',r.restituzioneBy);s('f_restituzione_by_other',r.restituzioneByOther);
   document.getElementById('f_pay_status').value=r.payStatus||'nonpagato';
 
   // Aggiorno suggerimento prezzo (solo info, non sovrascrivo)
@@ -578,13 +706,77 @@ function openEditRental(rid){
     } else if(sg) sg.textContent='';
   }
 
-  selColor=r.color||RCOLS[0];
-  buildColorPick('colorPick',RCOLS,selColor,c=>selColor=c);
   calcTot();
   document.getElementById('btnDel').style.display='flex';
   document.getElementById('clientLookup').value='';
   document.getElementById('clientSuggest').innerHTML='';
+
+  // Badge stato operativo + lock se chiuso
+  refreshOpStatusUI(r);
+  const op=getOpStatus(r);
+  refreshLockUI(op==='chiuso' && !window._editUnlocked);
+  // Reset flag unlock al cambio rental
+  window._editUnlocked=false;
+
   document.getElementById('mRental').classList.add('open');
+
+  // Focus opzionale (da click destro su barra)
+  if(focus==='consegna'){
+    setTimeout(()=>{
+      const el=document.getElementById('sec_consegna');
+      if(el)el.scrollIntoView({behavior:'smooth',block:'start'});
+      // Se vergine, prepara timestamp now per comodità
+      if(!r.consegnaAt){
+        const inp=document.getElementById('f_consegna_at');
+        if(inp&&!inp.value)inp.value=nowLocalISO();
+      }
+    },150);
+  } else if(focus==='restituzione'){
+    setTimeout(()=>{
+      const el=document.getElementById('sec_restituzione');
+      if(el)el.scrollIntoView({behavior:'smooth',block:'start'});
+      if(!r.restituzioneAt){
+        const inp=document.getElementById('f_restituzione_at');
+        if(inp&&!inp.value)inp.value=nowLocalISO();
+      }
+    },150);
+  }
+}
+
+// Aggiorna badge stato operativo in cima al modal noleggio
+function refreshOpStatusUI(r){
+  const box=document.getElementById('opStatusBox');
+  if(!box)return;
+  // Costruisco un "r" virtuale per noleggio nuovo
+  const eff=r||{startKey:dk(DAYS[curSi||0]),endKey:dk(DAYS[curEi||0])};
+  const op=getOpStatus(eff);
+  const labels={prenotato:'🕐 Prenotato',incorso:'🚗 In corso',chiuso:'✅ Chiuso'};
+  box.className='op-status-box op-'+op;
+  box.innerHTML=`<span class="op-label">Stato:</span> <span class="op-value">${labels[op]||op}</span>`;
+}
+
+// Lock/unlock dei campi quando il noleggio è chiuso
+function refreshLockUI(locked){
+  const modal=document.getElementById('mRental');
+  if(!modal)return;
+  modal.classList.toggle('locked',!!locked);
+  const btnUnlock=document.getElementById('btnUnlock');
+  if(btnUnlock)btnUnlock.style.display=locked?'flex':'none';
+  const btnSave=document.querySelector('#mRental .btn-accent[onclick*="saveRental"]');
+  // Disabilito gli input quando bloccato
+  modal.querySelectorAll('input,select,textarea,button').forEach(el=>{
+    if(el.classList.contains('mclose'))return;
+    if(el.id==='btnUnlock')return;
+    if(el.classList.contains('btn-ghost') && el.textContent.trim()==='Annulla')return;
+    if(el.classList.contains('btn-teal'))return; // stampa contratto sempre attiva
+    el.disabled=!!locked;
+  });
+}
+
+function unlockRental(){
+  window._editUnlocked=true;
+  refreshLockUI(false);
+  toast('Noleggio sbloccato per la modifica');
 }
 
 function setRO(si,ei){
@@ -654,12 +846,19 @@ function saveRental(){
   const acconto=parseFloat(gv('f_acconto'))||0;
   const pen=parseFloat(gv('f_pen'))||0;
   const saldo=tot+pen-acconto;
+  // Stato operativo: dedotto dai dati di consegna/restituzione (verità unica)
+  const consegnaAt=gv('f_consegna_at');
+  const restituzioneAt=gv('f_restituzione_at');
+  let opStatus='prenotato';
+  if(consegnaAt && restituzioneAt) opStatus='chiuso';
+  else if(consegnaAt) opStatus='incorso';
   const r={
     id:curRid||'r'+Date.now(),
     ctrNum:curRid?(rentals.find(x=>x.id===curRid)?.ctrNum||ctrCounter):ctrCounter,
     carId:curCid,
     startKey:dk(DAYS[curSi]), endKey:dk(DAYS[curEi]),
-    color:selColor, stato:gv('f_stato'), payStatus:gv('f_pay_status'),
+    stato:gv('f_stato'), payStatus:gv('f_pay_status'),
+    opStatus,
     km:gv('f_km'), kmR:gv('f_km_r'), fuel:gv('f_fuel'), clean:gv('f_clean'),
     tipo:gv('f_tipo'), cognome:gv('f_cognome'), nome:gv('f_nome'), cf:gv('f_cf'),
     indirizzo:gv('f_indirizzo'), tel:gv('f_tel'), email:gv('f_email'),
@@ -667,11 +866,15 @@ function saveRental(){
     aCog:gv('f_a_cog'), aNom:gv('f_a_nom'), aPat:gv('f_a_pat'), aSca:gv('f_a_sca'),
     prezzo:gv('f_prezzo'), sp:gv('f_sp'), se:gv('f_se'), cau:gv('f_cau'),
     acconto:gv('f_acconto'), pag:gv('f_pag'), pen:gv('f_pen'),
-    // Salvo come numeri per evitare bug nei toFixed
     totale: p? +tot.toFixed(2) : 0,
     saldo:  p? +saldo.toFixed(2) : 0,
+    // Consegna
+    consegnaAt, consegnaBy:gv('f_consegna_by'), consegnaByOther:gv('f_consegna_by_other'),
     dCarr:gv('f_d_carr'), dVetri:gv('f_d_vetri'), dInt:gv('f_d_int'), dCer:gv('f_d_cer'), dNote:gv('f_d_note'),
-    rCarr:gv('f_r_carr'), rVetri:gv('f_r_vetri'), rFuel:gv('f_r_fuel'), rClean:gv('f_r_clean'), rNote:gv('f_r_note'),
+    // Restituzione
+    restituzioneAt, restituzioneBy:gv('f_restituzione_by'), restituzioneByOther:gv('f_restituzione_by_other'),
+    rCarr:gv('f_r_carr'), rVetri:gv('f_r_vetri'), rInt:gv('f_r_int'), rCer:gv('f_r_cer'),
+    rFuel:gv('f_r_fuel'), rClean:gv('f_r_clean'), rNote:gv('f_r_note'),
     note:gv('f_note'),
   };
   if(!curRid){ctrCounter++; fbSet('meta','ctr',{value:ctrCounter});}
@@ -711,6 +914,46 @@ function saveRental(){
   }
   showSync('Salvato ✓');
   closeM('mRental'); buildTable(); toast('Noleggio salvato ✓');
+}
+
+// Imposta il timestamp di consegna a ora e propaga (l'utente può comunque modificarlo)
+function setConsegnaNow(){
+  const inp=document.getElementById('f_consegna_at');
+  if(!inp)return;
+  inp.value=nowLocalISO();
+  // Auto-seleziona Silvio se vuoto (default più comodo)
+  const by=document.getElementById('f_consegna_by');
+  if(by && !by.value) by.value='Silvio';
+  // Aggiorna badge stato in tempo reale
+  const r={...rentals.find(x=>x.id===curRid),consegnaAt:inp.value,restituzioneAt:gv('f_restituzione_at')};
+  refreshOpStatusUI(r);
+  toast('Consegna registrata ora');
+}
+function setRestituzioneNow(){
+  const inp=document.getElementById('f_restituzione_at');
+  if(!inp)return;
+  if(!gv('f_consegna_at')){
+    toast('Registra prima la consegna','err');
+    return;
+  }
+  inp.value=nowLocalISO();
+  const by=document.getElementById('f_restituzione_by');
+  if(by && !by.value) by.value='Silvio';
+  const r={...rentals.find(x=>x.id===curRid),consegnaAt:gv('f_consegna_at'),restituzioneAt:inp.value};
+  refreshOpStatusUI(r);
+  toast('Restituzione registrata ora');
+}
+
+// Mostra/nasconde campo "Altro operatore" in base alla select
+function toggleConsegnaByOther(){
+  const sel=document.getElementById('f_consegna_by');
+  const wrap=document.getElementById('wrap_consegna_by_other');
+  if(sel && wrap) wrap.style.display=sel.value==='Altro'?'flex':'none';
+}
+function toggleRestituzioneByOther(){
+  const sel=document.getElementById('f_restituzione_by');
+  const wrap=document.getElementById('wrap_restituzione_by_other');
+  if(sel && wrap) wrap.style.display=sel.value==='Altro'?'flex':'none';
 }
 
 async function deleteRental(){
@@ -780,13 +1023,15 @@ function printContract(){
 <div class="p-title">Contratto di Noleggio Veicolo</div>
 <div class="p-sec"><div class="p-sec-t">1. Dati Conduttore</div><div class="pgrid">${row('Cognome',gv('f_cognome'))}${row('Nome',gv('f_nome'))}${row('C.F./P.IVA',gv('f_cf'))}${row('Tipo',gv('f_tipo'))}${row('Indirizzo',gv('f_indirizzo'),true)}${row('Telefono',gv('f_tel'))}${row('Email',gv('f_email'))}${row('N° Patente',gv('f_pat'))}${row('Rilascio',fd(gv('f_pat_r')))}${row('Scadenza pat.',fd(gv('f_pat_s')))}</div></div>
 ${hasAgg?`<div class="p-sec"><div class="p-sec-t">2. Conducente Aggiuntivo</div><div class="pgrid">${row('Cognome',gv('f_a_cog'))}${row('Nome',gv('f_a_nom'))}${row('N° Patente',gv('f_a_pat'))}${row('Scadenza',fd(gv('f_a_sca')))}</div></div>`:''}
-<div class="p-sec"><div class="p-sec-t">${hasAgg?'3':'2'}. Veicolo</div><div class="pgrid t3">${row('Targa',car?car.targa:'—')}${row('Modello',car?car.model:'—')}${row('Categoria',car&&car.cat?car.cat:'—')}${row('KM cons.',gv('f_km')||'—')}${row('KM resa',gv('f_km_r')||'—')}${row('KM percorsi',kmPerc)}${row('Carburante',gv('f_fuel'))}${row('Pulizia cons.',gv('f_clean'))}${row('Carb. reso',gv('f_r_fuel'))}${row('Pulizia resa',gv('f_r_clean'))}</div>
-<div style="font-size:8pt;margin-top:4px"><strong>Danni consegna:</strong> Carr.=${gv('f_d_carr')||'—'} · Vetri=${gv('f_d_vetri')||'—'} · Int.=${gv('f_d_int')||'—'} · Cerchi=${gv('f_d_cer')||'—'}${gv('f_d_note')?' · '+gv('f_d_note'):''}</div>
-${(gv('f_r_carr')||gv('f_r_note'))?`<div style="font-size:8pt;margin-top:2px"><strong>Restituzione:</strong> Carr.=${gv('f_r_carr')||'—'} · Vetri=${gv('f_r_vetri')||'—'}${gv('f_r_note')?' · '+gv('f_r_note'):''}</div>`:''}</div>
-<div class="p-sec"><div class="p-sec-t">${hasAgg?'4':'3'}. Periodo e Corrispettivo</div><div class="pgrid t3">${row('Data inizio',fd(dk(si)))}${row('Data fine',fd(dk(ei)))}${row('N° giorni',days)}${row('Prezzo/giorno',p?`€ ${p.toFixed(2)}`:'—')}${row('Sconto',sc>0?`€ ${sc.toFixed(2)}`:'—')}${row('IVA 22%',p?`€ ${iva.toFixed(2)}`:'—')}</div>${p?`<div class="p-tot"><strong>TOTALE IVA INCLUSA</strong><strong style="font-size:13pt;color:#0f1f3d">€ ${tot.toFixed(2)}</strong></div>`:''}</div>
-<div class="p-sec"><div class="p-sec-t">${hasAgg?'5':'4'}. Pagamento e Cauzione</div><div class="pgrid">${row('Metodo',gv('f_pag'))}${row('Cauzione',gv('f_cau')?`€ ${parseFloat(gv('f_cau')).toFixed(2)}`:'—')}${row('Acconto',acconto?`€ ${acconto.toFixed(2)}`:'—')}${row('Saldo residuo',p?`€ ${saldo.toFixed(2)}`:'—')}${row('Stato pagamento',gv('f_pay_status'))}</div></div>
+<div class="p-sec"><div class="p-sec-t">${hasAgg?'3':'2'}. Veicolo</div><div class="pgrid t3">${row('Targa',car?car.targa:'—')}${row('Modello',car?car.model:'—')}${row('Categoria',car&&car.cat?car.cat:'—')}</div></div>
+<div class="p-sec"><div class="p-sec-t">${hasAgg?'4':'3'}. Verbale di Consegna</div><div class="pgrid t3">${row('Data/ora consegna',fdt(gv('f_consegna_at')))}${row('Operatore',gv('f_consegna_by')==='Altro'?gv('f_consegna_by_other'):gv('f_consegna_by'))}${row('KM consegna',gv('f_km')||'—')}${row('Carburante',gv('f_fuel'))}${row('Pulizia',gv('f_clean'))}${row('',' ')}</div>
+<div style="font-size:8pt;margin-top:4px"><strong>Stato veicolo alla consegna:</strong> Carr.=${gv('f_d_carr')||'—'} · Vetri=${gv('f_d_vetri')||'—'} · Int.=${gv('f_d_int')||'—'} · Cerchi=${gv('f_d_cer')||'—'}${gv('f_d_note')?' · '+gv('f_d_note'):''}</div></div>
+${(gv('f_restituzione_at')||gv('f_r_carr')||gv('f_r_note')||gv('f_km_r'))?`<div class="p-sec"><div class="p-sec-t">${hasAgg?'5':'4'}. Verbale di Restituzione</div><div class="pgrid t3">${row('Data/ora restituzione',fdt(gv('f_restituzione_at')))}${row('Operatore',gv('f_restituzione_by')==='Altro'?gv('f_restituzione_by_other'):gv('f_restituzione_by'))}${row('KM restituzione',gv('f_km_r')||'—')}${row('KM percorsi',kmPerc)}${row('Carburante reso',gv('f_r_fuel'))}${row('Pulizia resa',gv('f_r_clean'))}</div>
+<div style="font-size:8pt;margin-top:4px"><strong>Stato veicolo alla resa:</strong> Carr.=${gv('f_r_carr')||'—'} · Vetri=${gv('f_r_vetri')||'—'} · Int.=${gv('f_r_int')||'—'} · Cerchi=${gv('f_r_cer')||'—'}${gv('f_r_note')?' · '+gv('f_r_note'):''}</div></div>`:''}
+<div class="p-sec"><div class="p-sec-t">${hasAgg?'6':'5'}. Periodo e Corrispettivo</div><div class="pgrid t3">${row('Data inizio',fd(dk(si)))}${row('Data fine',fd(dk(ei)))}${row('N° giorni',days)}${row('Prezzo/giorno',p?`€ ${p.toFixed(2)}`:'—')}${row('Sconto',sc>0?`€ ${sc.toFixed(2)}`:'—')}${row('IVA 22%',p?`€ ${iva.toFixed(2)}`:'—')}</div>${p?`<div class="p-tot"><strong>TOTALE IVA INCLUSA</strong><strong style="font-size:13pt;color:#0f1f3d">€ ${tot.toFixed(2)}</strong></div>`:''}</div>
+<div class="p-sec"><div class="p-sec-t">${hasAgg?'7':'6'}. Pagamento e Cauzione</div><div class="pgrid">${row('Metodo',gv('f_pag'))}${row('Cauzione',gv('f_cau')?`€ ${parseFloat(gv('f_cau')).toFixed(2)}`:'—')}${row('Acconto',acconto?`€ ${acconto.toFixed(2)}`:'—')}${row('Saldo residuo',p?`€ ${saldo.toFixed(2)}`:'—')}${row('Stato pagamento',gv('f_pay_status'))}</div></div>
 ${gv('f_note')?`<div class="p-sec"><div class="p-sec-t">Note</div><div style="border:1px solid #ccc;padding:6px;font-size:9pt">${gv('f_note')}</div></div>`:''}
-<div class="p-sec"><div class="p-sec-t">${hasAgg?'6':'5'}. Condizioni Generali</div><div class="p-clauses">
+<div class="p-sec"><div class="p-sec-t">${hasAgg?'8':'7'}. Condizioni Generali</div><div class="p-clauses">
 <div class="p-ct">Art.1 — Consegna e restituzione</div><div>Il veicolo viene consegnato nelle condizioni descritte nel presente verbale. La restituzione deve avvenire entro la data stabilita, nelle medesime condizioni.</div>
 <div class="p-ct">Art.2 — Uso del veicolo</div><div>Il veicolo deve essere utilizzato esclusivamente dal conduttore autorizzato. È vietato l'uso per gare, competizioni, trasporto a pagamento o attività illecite.</div>
 <div class="p-ct">Art.3 — Carburante</div><div>La restituzione deve avvenire con lo stesso livello di carburante della consegna. Il carburante mancante sarà addebitato con maggiorazione di servizio.</div>
@@ -798,7 +1043,310 @@ ${settings.clauses?`<div class="p-ct">Clausole aggiuntive</div><div>${settings.c
 </div></div>
 <div class="p-sigs"><div><div class="p-sig-line"></div><div class="p-sig-lbl"><strong>${ag}</strong><br>Firma e timbro</div></div><div><div class="p-sig-line"></div><div class="p-sig-lbl"><strong>IL CONDUTTORE</strong><br>${gv('f_cognome')||'___________'} ${gv('f_nome')||''}<br>Firma per accettazione</div></div></div>
 <div style="text-align:center;font-size:7.5pt;color:#777;margin-top:10px">Il conduttore dichiara di aver letto e accettato integralmente le condizioni generali di noleggio. | ${ctrStr} | ${fd(dk(TODAY))}</div>
+</div>${buildPrivacyHTML({cognome:gv('f_cognome'),nome:gv('f_nome'),cf:gv('f_cf'),indirizzo:gv('f_indirizzo'),docRef:ctrStr,docType:'CONTRATTO'})}`;
+  document.getElementById('parea').innerHTML=html;
+  document.getElementById('parea').style.display='block';
+  window.print();
+  document.getElementById('parea').style.display='none';
+}
+
+// Stampa SOLO la modulistica privacy (pulsante dedicato)
+function printPrivacyStandalone(){
+  const cognome=gv('f_cognome'), nome=gv('f_nome'), cf=gv('f_cf'), indirizzo=gv('f_indirizzo');
+  const r=rentals.find(x=>x.id===curRid);
+  const docRef=r?.ctrNum?`CTR-${(r.startKey||'').split('-')[0]||curYear}-${p2(r.ctrNum)}`:'—';
+  const html=buildPrivacyHTML({cognome,nome,cf,indirizzo,docRef,docType:'NOLEGGIO'});
+  document.getElementById('parea').innerHTML=html;
+  document.getElementById('parea').style.display='block';
+  window.print();
+  document.getElementById('parea').style.display='none';
+}
+
+// Stampa privacy dal modal preventivo
+function printPrivacyFromPreventivo(){
+  const cognome=gv('pv_cognome'), nome=gv('pv_nome'), cf=gv('pv_cf'), indirizzo=gv('pv_indirizzo');
+  const p=preventivi.find(x=>x.id===curPrvId);
+  const docRef=p?.prvNum?`PRV-${(p.dataEmiss||'').split('-')[0]||curYear}-${p2(p.prvNum)}`:'—';
+  const html=buildPrivacyHTML({cognome,nome,cf,indirizzo,docRef,docType:'PREVENTIVO'});
+  document.getElementById('parea').innerHTML=html;
+  document.getElementById('parea').style.display='block';
+  window.print();
+  document.getElementById('parea').style.display='none';
+}
+
+// Costruisce il blocco HTML stampabile dell'informativa privacy + consensi
+function buildPrivacyHTML({cognome,nome,cf,indirizzo,docRef,docType}){
+  const ag=settings.agency||'AutoNoleggio';
+  const txt=(settings.privacy||DEFAULT_SETTINGS.privacy).replace(/\n/g,'<br>');
+  const dataEmiss=fd(dk(TODAY));
+  return `<div class="pdoc" style="page-break-before:always">
+<div class="p-hdr"><div><div class="p-agency">${ag}</div>${settings.address?`<div style="font-size:8pt;color:#555">${settings.address}</div>`:''}${settings.phone||settings.email?`<div style="font-size:8pt;color:#555">${[settings.phone,settings.email].filter(Boolean).join(' · ')}</div>`:''}${settings.piva?`<div style="font-size:8pt;color:#555">P.IVA: ${settings.piva}</div>`:''}</div><div style="text-align:right"><div style="font-size:10pt;font-weight:bold;color:#0f1f3d">INFORMATIVA PRIVACY</div><div style="font-size:8.5pt;color:#555">Rif. ${docType}: ${docRef}</div><div style="font-size:8.5pt;color:#555">Data: ${dataEmiss}</div></div></div>
+<div class="p-title">Informativa e Consenso al Trattamento dei Dati Personali</div>
+<div style="border:1px solid #ccc;padding:10px;font-size:8.5pt;line-height:1.45;background:#fafafa">${txt}</div>
+<div class="p-sec" style="margin-top:14px">
+<div class="p-sec-t">Dati dell'interessato</div>
+<div class="pgrid"><div class="pf"><div class="pfl">Cognome e Nome</div><div class="pfv">${cognome||'___________________________'} ${nome||''}</div></div><div class="pf"><div class="pfl">C.F. / P.IVA</div><div class="pfv">${cf||'___________________________'}</div></div><div class="pf full"><div class="pfl">Indirizzo</div><div class="pfv">${indirizzo||'_______________________________________________________'}</div></div></div>
+</div>
+<div class="p-sec">
+<div class="p-sec-t">Consensi specifici</div>
+<table style="width:100%;border-collapse:collapse;font-size:9pt;border:1px solid #ccc">
+<tr style="background:#f0f4f8"><td style="padding:6px 8px;border-bottom:1px solid #ccc"><strong>a) Trattamento per l'esecuzione del contratto di noleggio</strong> (obbligatorio)</td><td style="text-align:center;padding:6px 8px;border-bottom:1px solid #ccc;border-left:1px solid #ccc;width:120px"><strong>NECESSARIO</strong></td></tr>
+<tr><td style="padding:6px 8px;border-bottom:1px solid #ccc">b) Comunicazioni commerciali, newsletter e iniziative promozionali (marketing diretto)</td><td style="text-align:center;padding:6px 8px;border-bottom:1px solid #ccc;border-left:1px solid #ccc">☐ ACCONSENTO &nbsp;&nbsp;&nbsp; ☐ NEGO</td></tr>
+<tr><td style="padding:6px 8px">c) Analisi e profilazione delle preferenze per offerte personalizzate</td><td style="text-align:center;padding:6px 8px;border-left:1px solid #ccc">☐ ACCONSENTO &nbsp;&nbsp;&nbsp; ☐ NEGO</td></tr>
+</table>
+</div>
+<div style="margin-top:18px;font-size:9pt">Il/La sottoscritto/a dichiara di aver ricevuto e letto l'informativa di cui all'art. 13 del Reg. UE 2016/679 e di esprimere i consensi sopra indicati.</div>
+<div class="p-sigs" style="margin-top:30px"><div><div style="font-size:8pt;color:#555;margin-bottom:4px">Luogo e data</div><div class="p-sig-line"></div></div><div><div style="font-size:8pt;color:#555;margin-bottom:4px">Firma dell'interessato</div><div class="p-sig-line"></div><div class="p-sig-lbl">${cognome||'___________'} ${nome||''}</div></div></div>
+<div style="text-align:center;font-size:7.5pt;color:#777;margin-top:14px">Titolare del trattamento: ${ag} | Rif. ${docType}: ${docRef}</div>
 </div>`;
+}
+
+// ---
+// PREVENTIVI
+// ---
+let curPrvId=null;
+
+function renderPreventivi(){
+  const q=(document.getElementById('prvSearch')?.value||'').toLowerCase();
+  const stF=document.getElementById('prvStatus')?.value||'';
+  let list=[...preventivi];
+  if(q)list=list.filter(p=>(p.cognome||'').toLowerCase().includes(q)||(p.nome||'').toLowerCase().includes(q)||(p.cf||'').toLowerCase().includes(q));
+  if(stF)list=list.filter(p=>(p.stato||'in_attesa')===stF);
+  // Aggiorna stato "scaduto" automaticamente per quelli passati la validità
+  const today=dk(TODAY);
+  list.forEach(p=>{
+    if((p.stato||'in_attesa')==='in_attesa' && p.validUntil && p.validUntil<today){
+      p.stato='scaduto';
+      // Non salvo in firebase qui per non far troppi write; il salvataggio avviene se l'utente apre/modifica
+    }
+  });
+  list.sort((a,b)=>(b.dataEmiss||'').localeCompare(a.dataEmiss||''));
+  const tbody=document.getElementById('prvBody'); if(!tbody)return;
+  tbody.innerHTML='';
+  if(!list.length){
+    tbody.innerHTML='<tr><td colspan="9" style="text-align:center;color:var(--text2);padding:24px">Nessun preventivo. Creane uno con il tasto in alto a destra.</td></tr>';
+    document.getElementById('prvCount').textContent='0 preventivi';
+    return;
+  }
+  list.forEach(p=>{
+    const car=cars.find(c=>c.id===p.carId);
+    const tot=parseFloat(p.totale)||0;
+    const stato=p.stato||'in_attesa';
+    const stLbl={in_attesa:'⏳ In attesa',accettato:'✅ Accettato',rifiutato:'❌ Rifiutato',scaduto:'⌛ Scaduto'}[stato]||stato;
+    const prvStr=p.prvNum?`PRV-${(p.dataEmiss||'').split('-')[0]||curYear}-${p2(p.prvNum)}`:'—';
+    const tr=document.createElement('tr');
+    tr.innerHTML=`<td style="font-family:'DM Mono',monospace;font-size:10px;color:var(--text3)">${prvStr}</td><td>${fd(p.dataEmiss)}</td><td><strong>${p.cognome||'—'}</strong> ${p.nome||''}</td><td style="font-family:'DM Mono',monospace;font-size:10px;color:var(--accent)">${car?car.targa:'—'}</td><td>${fd(p.startKey)} → ${fd(p.endKey)}</td><td>${p.days||'—'}</td><td style="font-family:'DM Mono',monospace">${tot?`€ ${tot.toFixed(0)}`:'—'}</td><td>${fd(p.validUntil)}</td><td><span class="prv-badge ${stato}">${stLbl}</span></td>`;
+    tr.onclick=()=>openPreventivo(p.id);
+    tbody.appendChild(tr);
+  });
+  document.getElementById('prvCount').textContent=`${list.length} preventivi`;
+}
+
+function openPreventivo(id){
+  curPrvId=id;
+  const p=id?preventivi.find(x=>x.id===id):null;
+  document.getElementById('mPrvTitle').textContent=p?'Modifica Preventivo':'Nuovo Preventivo';
+  // Reset campi
+  const fields=['pv_cognome','pv_nome','pv_cf','pv_indirizzo','pv_tel','pv_email','pv_tipo','pv_start','pv_end','pv_prezzo','pv_sp','pv_se','pv_note'];
+  fields.forEach(fid=>{const el=document.getElementById(fid);if(el)el.value=''});
+  // Popola select auto
+  const sel=document.getElementById('pv_car');
+  if(sel){
+    sel.innerHTML='<option value="">— Seleziona auto —</option>'+cars.map(c=>`<option value="${c.id}">${c.targa} — ${c.model||''} ${c.cat?'(Cat. '+c.cat+')':''}</option>`).join('');
+  }
+  if(p){
+    document.getElementById('pv_cognome').value=p.cognome||'';
+    document.getElementById('pv_nome').value=p.nome||'';
+    document.getElementById('pv_cf').value=p.cf||'';
+    document.getElementById('pv_indirizzo').value=p.indirizzo||'';
+    document.getElementById('pv_tel').value=p.tel||'';
+    document.getElementById('pv_email').value=p.email||'';
+    document.getElementById('pv_tipo').value=p.tipo||'';
+    document.getElementById('pv_car').value=p.carId||'';
+    document.getElementById('pv_start').value=p.startKey||'';
+    document.getElementById('pv_end').value=p.endKey||'';
+    document.getElementById('pv_prezzo').value=p.prezzo||'';
+    document.getElementById('pv_sp').value=p.sp||'';
+    document.getElementById('pv_se').value=p.se||'';
+    document.getElementById('pv_note').value=p.note||'';
+    document.getElementById('pv_stato').value=p.stato||'in_attesa';
+    document.getElementById('btnPrvDel').style.display='flex';
+    document.getElementById('btnPrvConvert').style.display=(p.stato==='accettato'||p.stato==='in_attesa')?'flex':'none';
+  } else {
+    // Nuovo: default oggi + giorni di validità
+    document.getElementById('pv_stato').value='in_attesa';
+    document.getElementById('btnPrvDel').style.display='none';
+    document.getElementById('btnPrvConvert').style.display='none';
+  }
+  prvCalcTot();
+  document.getElementById('mPreventivo').classList.add('open');
+}
+
+function prvCalcTot(){
+  const sv=gv('pv_start'), ev=gv('pv_end');
+  let days=0;
+  if(sv && ev){
+    const sd=new Date(sv), ed=new Date(ev);
+    days=Math.max(1,Math.round((ed-sd)/86400000)+1);
+  }
+  const p=parseFloat(gv('pv_prezzo'))||0;
+  const sp=parseFloat(gv('pv_sp'))||0, se2=parseFloat(gv('pv_se'))||0;
+  const base=days*p, sc=se2>0?se2:base*sp/100, net=base-sc, iva=net*.22, tot=net+iva;
+  const out=document.getElementById('pv_calc');
+  const dd=document.getElementById('pv_days');
+  if(dd)dd.textContent=days?`${days} gg`:'—';
+  if(!out)return;
+  if(!p||!days){out.style.display='none';return}
+  out.style.display='block';
+  document.getElementById('pv_base').textContent=`€ ${base.toFixed(2)}`;
+  document.getElementById('pv_sc').textContent=sc>0?`- € ${sc.toFixed(2)}`:'—';
+  document.getElementById('pv_iva').textContent=`€ ${iva.toFixed(2)}`;
+  document.getElementById('pv_tot').textContent=`€ ${tot.toFixed(2)}`;
+  // Suggerimento prezzo se auto selezionata e ha categoria
+  const carId=gv('pv_car');
+  const car=cars.find(c=>c.id===carId);
+  const sg=document.getElementById('pv_suggest');
+  if(car && car.cat && sv){
+    const pp=getPrezzoSuggerito(car.cat,sv);
+    const season=getStagione(sv);
+    if(pp>0 && sg) sg.innerHTML=`Suggerito: <strong style="color:var(--accent)">€${pp}/gg</strong> · Cat. ${car.cat} · Stagione ${season}`;
+    else if(sg) sg.textContent=`(nessuna tariffa per cat. ${car.cat} stagione ${season})`;
+  } else if(sg) sg.textContent='';
+}
+
+function pvCarChanged(){
+  const carId=gv('pv_car');
+  const car=cars.find(c=>c.id===carId);
+  const sv=gv('pv_start');
+  if(car && car.cat && sv){
+    const pp=getPrezzoSuggerito(car.cat,sv);
+    const inp=document.getElementById('pv_prezzo');
+    if(pp>0 && inp && !inp.value) inp.value=pp;
+  }
+  prvCalcTot();
+}
+
+function savePreventivo(){
+  const startKey=gv('pv_start'), endKey=gv('pv_end');
+  if(!gv('pv_cognome')){toast('Inserisci almeno il cognome','err');return}
+  if(!gv('pv_car')){toast('Seleziona l\'auto','err');return}
+  if(!startKey || !endKey){toast('Inserisci le date','err');return}
+  const sd=new Date(startKey), ed=new Date(endKey);
+  if(ed<sd){toast('La data di fine deve essere dopo l\'inizio','err');return}
+  const days=Math.max(1,Math.round((ed-sd)/86400000)+1);
+  const p=parseFloat(gv('pv_prezzo'))||0;
+  const sp=parseFloat(gv('pv_sp'))||0, se2=parseFloat(gv('pv_se'))||0;
+  const base=days*p, sc=se2>0?se2:base*sp/100, net=base-sc, iva=net*.22, tot=net+iva;
+  const today=dk(TODAY);
+  // Validità: oggi + N giorni
+  const vd=settings.preventivoValidityDays||7;
+  const validUntil=new Date(TODAY.getTime()+vd*86400000);
+  const validUntilKey=dk(validUntil);
+  const existing=curPrvId?preventivi.find(x=>x.id===curPrvId):null;
+  const obj={
+    id:curPrvId||'p'+Date.now(),
+    prvNum:existing?.prvNum||prvCounter,
+    dataEmiss:existing?.dataEmiss||today,
+    validUntil:existing?.validUntil||validUntilKey,
+    carId:gv('pv_car'),
+    startKey, endKey, days,
+    cognome:gv('pv_cognome'), nome:gv('pv_nome'), cf:gv('pv_cf'),
+    indirizzo:gv('pv_indirizzo'), tel:gv('pv_tel'), email:gv('pv_email'),
+    tipo:gv('pv_tipo'),
+    prezzo:gv('pv_prezzo'), sp:gv('pv_sp'), se:gv('pv_se'),
+    totale:p?+tot.toFixed(2):0,
+    note:gv('pv_note'),
+    stato:gv('pv_stato')||'in_attesa'
+  };
+  if(!curPrvId){prvCounter++; fbSet('meta','prv',{value:prvCounter});}
+  if(curPrvId){const i=preventivi.findIndex(x=>x.id===curPrvId);if(i>=0)preventivi[i]=obj}
+  else preventivi.push(obj);
+  fbSet('preventivi',obj.id,obj);
+  curPrvId=obj.id; // memorizzo per stampa successiva
+  closeM('mPreventivo');
+  renderPreventivi();
+  toast('Preventivo salvato ✓');
+}
+
+async function deletePreventivo(){
+  if(!curPrvId||!confirm('Eliminare questo preventivo?'))return;
+  preventivi=preventivi.filter(p=>p.id!==curPrvId);
+  await fbDelete('preventivi',curPrvId);
+  closeM('mPreventivo'); renderPreventivi(); toast('Eliminato');
+}
+
+// Converte un preventivo in un noleggio (apre il modal noleggio precompilato)
+function convertPreventivoToRental(){
+  const p=preventivi.find(x=>x.id===curPrvId); if(!p)return;
+  if(!confirm(`Convertire questo preventivo nel noleggio definitivo?\nIl preventivo sarà marcato come "accettato".`))return;
+  // Marca come accettato
+  p.stato='accettato';
+  fbSet('preventivi',p.id,p);
+  // Apre il modal noleggio con i dati del preventivo
+  const carId=p.carId;
+  const si=DAYS.findIndex(d=>dk(d)===p.startKey);
+  const ei=DAYS.findIndex(d=>dk(d)===p.endKey);
+  if(si<0||ei<0){
+    toast('Le date del preventivo non rientrano nell\'anno corrente. Cambia anno e riprova.','err');
+    return;
+  }
+  closeM('mPreventivo');
+  openNewRental(carId,si,ei);
+  // Precompilo i campi cliente e corrispettivo
+  setTimeout(()=>{
+    const s=(id,v)=>{const el=document.getElementById(id);if(el)el.value=v||''};
+    s('f_cognome',p.cognome); s('f_nome',p.nome); s('f_cf',p.cf);
+    s('f_indirizzo',p.indirizzo); s('f_tel',p.tel); s('f_email',p.email);
+    s('f_tipo',p.tipo);
+    s('f_prezzo',p.prezzo); s('f_sp',p.sp); s('f_se',p.se);
+    if(p.note){
+      const cur=gv('f_note');
+      s('f_note',cur?cur+'\nDa preventivo PRV-'+p2(p.prvNum)+': '+p.note:'Da preventivo PRV-'+p2(p.prvNum)+': '+p.note);
+    } else {
+      s('f_note','Da preventivo PRV-'+p2(p.prvNum));
+    }
+    calcTot();
+    toast('Preventivo convertito. Completa e salva il noleggio.');
+  },100);
+}
+
+// Stampa preventivo PDF (allega privacy in coda automaticamente)
+function printPreventivo(){
+  const car=cars.find(c=>c.id===gv('pv_car'));
+  const startKey=gv('pv_start'), endKey=gv('pv_end');
+  if(!gv('pv_cognome')||!car||!startKey||!endKey){
+    toast('Compila almeno cognome, auto e date prima di stampare','err');
+    return;
+  }
+  const sd=new Date(startKey), ed=new Date(endKey);
+  const days=Math.max(1,Math.round((ed-sd)/86400000)+1);
+  const p=parseFloat(gv('pv_prezzo'))||0;
+  const sp=parseFloat(gv('pv_sp'))||0, se2=parseFloat(gv('pv_se'))||0;
+  const base=days*p, sc=se2>0?se2:base*sp/100, net=base-sc, iva=net*.22, tot=net+iva;
+  const existing=curPrvId?preventivi.find(x=>x.id===curPrvId):null;
+  const prvNum=existing?.prvNum||prvCounter;
+  const dataEmiss=existing?.dataEmiss||dk(TODAY);
+  const vd=settings.preventivoValidityDays||7;
+  const validUntil=existing?.validUntil||dk(new Date(TODAY.getTime()+vd*86400000));
+  const prvStr=`PRV-${(dataEmiss||dk(TODAY)).split('-')[0]||curYear}-${p2(prvNum)}`;
+  const ag=settings.agency||'AutoNoleggio';
+  function row(l,v,full=false){return`<div class="pf${full?' full':''}"><div class="pfl">${l}</div><div class="pfv">${v||'—'}</div></div>`}
+  const html=`<div class="pdoc">
+<div class="p-hdr"><div><div class="p-agency">${ag}</div>${settings.address?`<div style="font-size:8pt;color:#555">${settings.address}</div>`:''}${settings.phone||settings.email?`<div style="font-size:8pt;color:#555">${[settings.phone,settings.email].filter(Boolean).join(' · ')}</div>`:''}${settings.piva?`<div style="font-size:8pt;color:#555">P.IVA: ${settings.piva}</div>`:''}</div><div style="text-align:right"><div style="font-size:11pt;font-weight:bold;color:#0f1f3d">${prvStr}</div><div style="font-size:8.5pt;color:#555">Emesso: ${fd(dataEmiss)}</div><div style="font-size:8.5pt;color:#555">Valido fino al: ${fd(validUntil)}</div></div></div>
+<div class="p-title">Preventivo di Noleggio Veicolo</div>
+<div class="p-sec"><div class="p-sec-t">Dati Cliente</div><div class="pgrid">${row('Cognome / Rag. Soc.',gv('pv_cognome'))}${row('Nome',gv('pv_nome'))}${row('C.F. / P.IVA',gv('pv_cf'))}${row('Tipo',gv('pv_tipo'))}${row('Indirizzo',gv('pv_indirizzo'),true)}${row('Telefono',gv('pv_tel'))}${row('Email',gv('pv_email'))}</div></div>
+<div class="p-sec"><div class="p-sec-t">Veicolo e Periodo</div><div class="pgrid t3">${row('Targa',car.targa)}${row('Modello',car.model||'—')}${row('Categoria',car.cat||'—')}${row('Data inizio',fd(startKey))}${row('Data fine',fd(endKey))}${row('N° giorni',days)}</div></div>
+<div class="p-sec"><div class="p-sec-t">Corrispettivo Stimato</div><div class="pgrid t3">${row('Prezzo/giorno',p?`€ ${p.toFixed(2)}`:'—')}${row('Imponibile',`€ ${base.toFixed(2)}`)}${row('Sconto',sc>0?`€ ${sc.toFixed(2)}`:'—')}${row('Subtotale',`€ ${net.toFixed(2)}`)}${row('IVA 22%',`€ ${iva.toFixed(2)}`)}${row('Totale IVA inclusa',`€ ${tot.toFixed(2)}`)}</div><div class="p-tot"><strong>TOTALE PREVENTIVO IVA INCLUSA</strong><strong style="font-size:13pt;color:#0f1f3d">€ ${tot.toFixed(2)}</strong></div></div>
+${gv('pv_note')?`<div class="p-sec"><div class="p-sec-t">Note</div><div style="border:1px solid #ccc;padding:6px;font-size:9pt">${gv('pv_note')}</div></div>`:''}
+<div class="p-sec"><div class="p-sec-t">Condizioni del preventivo</div><div class="p-clauses">
+<div>Il presente preventivo è valido fino al <strong>${fd(validUntil)}</strong> e non costituisce impegno contrattuale fino alla firma del contratto di noleggio definitivo.</div>
+<div style="margin-top:6px">L'importo è calcolato sulle tariffe in vigore alla data di emissione e include IVA al 22%. Eventuali optional, supplementi, cauzioni o penali non sono inclusi se non espressamente indicati in questo documento.</div>
+<div style="margin-top:6px">La disponibilità del veicolo è soggetta a conferma al momento della stipula del contratto.</div>
+${settings.foro?`<div style="margin-top:6px">Per qualsiasi controversia le parti eleggono come foro competente il Tribunale di ${settings.foro}.</div>`:''}
+</div></div>
+<div class="p-sigs"><div><div class="p-sig-line"></div><div class="p-sig-lbl"><strong>${ag}</strong><br>Firma e timbro</div></div><div><div class="p-sig-line"></div><div class="p-sig-lbl"><strong>IL CLIENTE</strong><br>${gv('pv_cognome')||'___________'} ${gv('pv_nome')||''}<br>Per accettazione del preventivo</div></div></div>
+<div style="text-align:center;font-size:7.5pt;color:#777;margin-top:10px">${prvStr} | Emesso il ${fd(dataEmiss)} | Valido fino al ${fd(validUntil)}</div>
+</div>${buildPrivacyHTML({cognome:gv('pv_cognome'),nome:gv('pv_nome'),cf:gv('pv_cf'),indirizzo:gv('pv_indirizzo'),docRef:prvStr,docType:'PREVENTIVO'})}`;
   document.getElementById('parea').innerHTML=html;
   document.getElementById('parea').style.display='block';
   window.print();
@@ -829,12 +1377,14 @@ function renderList(){
   const st=document.getElementById('listStatus').value;
   const cc=document.getElementById('listCar').value;
   const pp=document.getElementById('listPay').value;
+  const opF=document.getElementById('listOpStatus')?.value||'';
   let list=[...rentals];
   if(q)list=list.filter(r=>(r.cognome||'').toLowerCase().includes(q)||(r.nome||'').toLowerCase().includes(q)||(cars.find(c=>c.id===r.carId)?.targa||'').toLowerCase().includes(q));
   if(yr)list=list.filter(r=>r.startKey&&r.startKey.startsWith(yr));
   if(st)list=list.filter(r=>r.stato===st);
   if(cc)list=list.filter(r=>r.carId===cc);
   if(pp)list=list.filter(r=>(r.payStatus||'nonpagato')===pp);
+  if(opF)list=list.filter(r=>getOpStatus(r)===opF);
 
   list.sort((a,b)=>{
     let va,vb;
@@ -861,7 +1411,9 @@ function renderList(){
     const tr=document.createElement('tr');
     const statoVal=r.stato||'noleggio';
     const statoLbl=statoVal==='opzione'?'prestito':statoVal;
-    tr.innerHTML=`<td style="font-family:'DM Mono',monospace;font-size:10px;color:var(--text3)">${ctrStr}</td><td><strong>${r.cognome||'—'}</strong> ${r.nome||''}<br><span style="font-size:10px;color:var(--text3)">${r.cf||''}</span></td><td style="font-family:'DM Mono',monospace;font-size:10px;color:var(--accent)">${car?car.targa:'—'}</td><td>${fd(r.startKey)}</td><td>${fd(r.endKey)}</td><td>${days}</td><td style="font-family:'DM Mono',monospace">${tot?`€ ${tot.toFixed(0)}`:'—'}</td><td><span class="badge ${payS}">${payS}</span></td><td><span class="badge ${statoVal}">${statoLbl}</span></td><td style="color:var(--text3);font-size:11px;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${r.note||''}</td>`;
+    const op=getOpStatus(r);
+    const opLbl={prenotato:'🕐 Prenotato',incorso:'🚗 In corso',chiuso:'✅ Chiuso'}[op]||op;
+    tr.innerHTML=`<td style="font-family:'DM Mono',monospace;font-size:10px;color:var(--text3)">${ctrStr}</td><td><strong>${r.cognome||'—'}</strong> ${r.nome||''}<br><span style="font-size:10px;color:var(--text3)">${r.cf||''}</span></td><td style="font-family:'DM Mono',monospace;font-size:10px;color:var(--accent)">${car?car.targa:'—'}</td><td>${fd(r.startKey)}</td><td>${fd(r.endKey)}</td><td>${days}</td><td style="font-family:'DM Mono',monospace">${tot?`€ ${tot.toFixed(0)}`:'—'}</td><td><span class="badge ${payS}">${payS}</span></td><td><span class="badge ${statoVal}">${statoLbl}</span></td><td><span class="op-badge op-${op}">${opLbl}</span></td><td style="color:var(--text3);font-size:11px;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${r.note||''}</td>`;
     tr.onclick=()=>openEditRental(r.id);
     tbody.appendChild(tr);
   });
@@ -1074,10 +1626,14 @@ function loadSettings(){
   s('set_piva',settings.piva);
   s('set_foro',settings.foro);
   s('set_clauses',settings.clauses);
+  s('set_privacy',settings.privacy);
+  s('set_preventivo_validity',settings.preventivoValidityDays!=null?settings.preventivoValidityDays:7);
   // Lista periodi stagionali
   renderStagioniList();
   // Tabella tariffe
   buildTariffTable();
+  // Solo ORA i campi sono popolati: abilito il salvataggio automatico
+  window._settingsReady=true;
 }
 
 function renderStagioniList(){
@@ -1153,6 +1709,15 @@ function buildTariffTable(){
 }
 
 function saveSettings(){
+  // GUARDIA: non salvare finché loadSettings non ha popolato i campi (evita di
+  // sovrascrivere i dati Firestore con stringhe vuote durante l'inizializzazione)
+  if(!window._settingsReady) return;
+  // Debounce 600ms: evita di scrivere a ogni keystroke
+  clearTimeout(window._settingsTimer);
+  window._settingsTimer=setTimeout(_doSaveSettings,600);
+}
+
+function _doSaveSettings(){
   settings.agency=gv('set_agency');
   settings.address=gv('set_address');
   settings.phone=gv('set_phone');
@@ -1160,6 +1725,9 @@ function saveSettings(){
   settings.piva=gv('set_piva');
   settings.foro=gv('set_foro');
   settings.clauses=gv('set_clauses');
+  settings.privacy=gv('set_privacy');
+  const vd=parseInt(gv('set_preventivo_validity'),10);
+  settings.preventivoValidityDays=Number.isFinite(vd)&&vd>0?vd:7;
   // settings.stagioni è già aggiornato direttamente dagli handler della lista (add/remove/update/toggle)
   // Mi assicuro solo che sia un array valido
   if(!Array.isArray(settings.stagioni)) settings.stagioni=[];
@@ -1180,7 +1748,7 @@ function saveSettings(){
 // EXPORT
 // ---
 function exportData(){
-  const d={cars,rentals,clients,settings,ctrCounter,exported:new Date().toISOString(),version:4};
+  const d={cars,rentals,clients,preventivi,settings,ctrCounter,prvCounter,exported:new Date().toISOString(),version:6};
   const b=new Blob([JSON.stringify(d,null,2)],{type:'application/json'});
   const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download=`fleet_backup_${new Date().toISOString().split('T')[0]}.json`;a.click();
   toast('Backup esportato ✓');
@@ -1195,8 +1763,10 @@ async function importData(e){
       if(d.cars){cars=d.cars; for(const c of cars)await fbSet('cars',c.id,c)}
       if(d.rentals){rentals=d.rentals; for(const r of rentals)await fbSet('rentals',r.id,r)}
       if(d.clients){clients=d.clients; for(const c of clients)await fbSet('clients',c.id,c)}
+      if(d.preventivi){preventivi=d.preventivi; for(const pv of preventivi)await fbSet('preventivi',pv.id,pv)}
       if(d.settings){settings=mergeSettings(d.settings); await fbSet('meta','settings',settings)}
       if(d.ctrCounter){ctrCounter=d.ctrCounter; await fbSet('meta','ctr',{value:ctrCounter})}
+      if(d.prvCounter){prvCounter=d.prvCounter; await fbSet('meta','prv',{value:prvCounter})}
       buildTable(); toast('Backup importato e sincronizzato ✓');
     }catch(err){console.error(err);toast('File non valido','err')}
   };
@@ -1205,13 +1775,15 @@ async function importData(e){
 
 function exportCSV(){
   const dArr=getDays(curYear);
-  const headers=['N° Contratto','Cliente','C.F./P.IVA','Auto','Categoria','Data Inizio','Data Fine','Giorni','Prezzo/gg','Totale','Acconto','Saldo','Stato Pagamento','Stato Noleggio','Pagamento','Note'];
+  const headers=['N° Contratto','Cliente','C.F./P.IVA','Auto','Categoria','Data Inizio','Data Fine','Giorni','Prezzo/gg','Totale','Acconto','Saldo','Stato Pagamento','Stato Noleggio','Stato Operativo','Pagamento','Consegna','Operatore Consegna','Restituzione','Operatore Restituzione','Note'];
   const rows=rentals.map(r=>{
     const car=cars.find(c=>c.id===r.carId);
     const si=dArr.findIndex(d=>dk(d)===r.startKey), ei=dArr.findIndex(d=>dk(d)===r.endKey);
     const days=si>=0&&ei>=0?ei-si+1:'';
     const ctrStr=r.ctrNum?`CTR-${(r.startKey||'').split('-')[0]||curYear}-${p2(r.ctrNum)}`:'';
-    return[ctrStr,`${r.cognome||''} ${r.nome||''}`.trim(),r.cf||'',car?car.targa:'',car?.cat||'',fd(r.startKey),fd(r.endKey),days,r.prezzo||'',r.totale||'',r.acconto||'',r.saldo||'',r.payStatus||'',r.stato||'',r.pag||'',r.note||''];
+    const consBy=r.consegnaBy==='Altro'?(r.consegnaByOther||'Altro'):(r.consegnaBy||'');
+    const restBy=r.restituzioneBy==='Altro'?(r.restituzioneByOther||'Altro'):(r.restituzioneBy||'');
+    return[ctrStr,`${r.cognome||''} ${r.nome||''}`.trim(),r.cf||'',car?car.targa:'',car?.cat||'',fd(r.startKey),fd(r.endKey),days,r.prezzo||'',r.totale||'',r.acconto||'',r.saldo||'',r.payStatus||'',r.stato||'',getOpStatus(r),r.pag||'',fdt(r.consegnaAt),consBy,fdt(r.restituzioneAt),restBy,r.note||''];
   });
   const csv=[headers,...rows].map(row=>row.map(v=>`"${String(v).replace(/"/g,'""')}"`).join(',')).join('\n');
   const b=new Blob(['\uFEFF'+csv],{type:'text/csv;charset=utf-8'});

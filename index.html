@@ -133,9 +133,44 @@ header{background:var(--surf);border-bottom:1px solid var(--border);min-height:5
 .dcell.we{background:var(--we-bg)}.dcell.td{background:var(--td-bg)}
 .dcell.mb{border-right:2px solid rgba(245,158,11,.18)}
 .dcell.sel{background:rgba(59,130,246,.28)!important;outline:1px solid var(--blue-l)}
-.rbar{position:absolute;top:4px;height:calc(var(--row-h) - 8px);border-radius:3px;z-index:5;display:flex;align-items:center;padding:0 6px;cursor:pointer;overflow:hidden;pointer-events:all;transition:filter .15s,transform .1s;box-shadow:0 2px 5px rgba(0,0,0,.4);white-space:nowrap}
+.rbar{position:absolute;top:4px;height:calc(var(--row-h) - 8px);border-radius:3px;z-index:5;display:flex;align-items:center;padding:0 6px;cursor:pointer;overflow:hidden;pointer-events:all;transition:filter .15s,transform .1s;box-shadow:0 2px 5px rgba(0,0,0,.4);white-space:nowrap;gap:4px}
 .rbar:hover{filter:brightness(1.18);transform:scaleY(1.08);z-index:10}
 .rbar-lbl{font-size:9px;font-weight:600;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.5);overflow:hidden;text-overflow:ellipsis;pointer-events:none}
+/* Stato operativo della barra (sovrapposto al colore del tipo) */
+.rbar.op-prenotato{opacity:.78;background-image:repeating-linear-gradient(45deg,transparent 0,transparent 5px,rgba(255,255,255,.18) 5px,rgba(255,255,255,.18) 7px) !important;border:1px dashed rgba(255,255,255,.45)}
+.rbar.op-incorso{box-shadow:0 2px 6px rgba(0,0,0,.5),inset 0 0 0 1px rgba(255,255,255,.25)}
+.rbar.op-chiuso{opacity:.5;filter:grayscale(55%);box-shadow:none}
+/* Pallino "live" per noleggi in corso */
+.rbar-live{width:7px;height:7px;border-radius:50%;background:#22c55e;box-shadow:0 0 0 2px rgba(34,197,94,.35);animation:rbar-pulse 1.6s ease-in-out infinite;flex-shrink:0;pointer-events:none}
+@keyframes rbar-pulse{0%,100%{box-shadow:0 0 0 2px rgba(34,197,94,.35)}50%{box-shadow:0 0 0 5px rgba(34,197,94,0)}}
+/* Badge stato operativo (lista + modal) */
+.op-badge{display:inline-block;padding:2px 7px;border-radius:10px;font-size:10px;font-weight:600;white-space:nowrap}
+.op-badge.op-prenotato{background:rgba(148,163,184,.22);color:#cbd5e1;border:1px dashed rgba(148,163,184,.5)}
+.op-badge.op-incorso{background:rgba(34,197,94,.22);color:#86efac}
+.op-badge.op-chiuso{background:rgba(100,116,139,.18);color:#94a3b8}
+/* Menu contestuale planning */
+.bar-menu{position:fixed;z-index:5000;background:var(--surf2);border:1px solid var(--border2);border-radius:8px;box-shadow:0 12px 36px rgba(0,0,0,.55);padding:5px;min-width:200px;animation:bmin .15s ease}
+@keyframes bmin{from{opacity:0;transform:translateY(-4px)}to{opacity:1}}
+.bar-menu-item{padding:8px 12px;font-size:12px;color:var(--text);cursor:pointer;border-radius:5px;transition:background .12s;white-space:nowrap}
+.bar-menu-item:hover{background:var(--surf3)}
+.bar-menu-item.disabled{color:var(--text3);cursor:not-allowed;opacity:.5}
+.bar-menu-item.disabled:hover{background:transparent}
+/* Modal noleggio: stato operativo box in alto + lock */
+.op-status-box{display:inline-flex;align-items:center;gap:7px;padding:5px 11px;border-radius:7px;font-size:12px;border:1px solid transparent;margin-bottom:10px}
+.op-status-box.op-prenotato{background:rgba(148,163,184,.12);border-color:rgba(148,163,184,.35);color:#cbd5e1}
+.op-status-box.op-incorso{background:rgba(34,197,94,.14);border-color:rgba(34,197,94,.4);color:#86efac}
+.op-status-box.op-chiuso{background:rgba(100,116,139,.12);border-color:rgba(100,116,139,.4);color:#94a3b8}
+.op-status-box .op-label{color:var(--text3);font-size:10px;text-transform:uppercase;letter-spacing:.5px}
+.op-status-box .op-value{font-weight:600}
+.modal.locked .mbody{opacity:.7}
+.modal.locked .mbody::after{content:"🔒 Noleggio chiuso — usa 'Riapri' per modificare";display:block;text-align:center;padding:8px;font-size:11px;color:var(--accent);background:rgba(245,158,11,.08);border-top:1px solid rgba(245,158,11,.2);margin-top:10px}
+/* Bottone "Registra ora" e azioni rapide nelle sezioni consegna/restituzione */
+.qa-row{display:flex;gap:8px;align-items:center;margin-bottom:8px;flex-wrap:wrap}
+.qa-btn{background:var(--accent);color:var(--navy);border:none;border-radius:6px;padding:6px 11px;font-size:11px;font-weight:600;cursor:pointer;display:flex;align-items:center;gap:5px;transition:.15s}
+.qa-btn:hover{background:var(--accent2)}
+.qa-btn.green{background:var(--green);color:#fff}
+.qa-btn.green:hover{background:#059669}
+.qa-btn:disabled{opacity:.4;cursor:not-allowed}
 /* list */
 .list-bar{display:flex;align-items:center;gap:8px;padding:8px 16px;background:var(--surf);border-bottom:1px solid var(--border);flex-shrink:0;flex-wrap:wrap}
 .list-bar input,.list-bar select{background:var(--navy);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:'DM Sans',sans-serif;font-size:12px;padding:5px 9px;outline:none}
@@ -154,6 +189,12 @@ header{background:var(--surf);border-bottom:1px solid var(--border);min-height:5
 .badge.pagato{background:rgba(16,185,129,.25);color:#6ee7b7}
 .badge.nonpagato{background:rgba(239,68,68,.2);color:#fca5a5}
 .badge.parziale{background:rgba(245,158,11,.2);color:var(--accent2)}
+/* Badge stato preventivo */
+.prv-badge{display:inline-block;padding:2px 8px;border-radius:10px;font-size:10px;font-weight:600;white-space:nowrap}
+.prv-badge.in_attesa{background:rgba(245,158,11,.18);color:var(--accent2)}
+.prv-badge.accettato{background:rgba(16,185,129,.22);color:#6ee7b7}
+.prv-badge.rifiutato{background:rgba(239,68,68,.18);color:#fca5a5}
+.prv-badge.scaduto{background:rgba(100,116,139,.18);color:#94a3b8}
 /* stats */
 .stats-wrap{flex:1 1 auto;overflow-y:auto;padding:14px;min-height:0}
 .kpi-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:14px}
@@ -352,6 +393,7 @@ header{padding:6px 10px;gap:6px}
 <div class="tabs">
 <button class="tab active" data-page="planning" onclick="showPage('planning',this)">📅 Planning</button>
 <button class="tab" data-page="list" onclick="showPage('list',this)">📋 Noleggi</button>
+<button class="tab" data-page="preventivi" onclick="showPage('preventivi',this)">💼 Preventivi</button>
 <button class="tab" data-page="stats" onclick="showPage('stats',this)">📊 Statistiche</button>
 <button class="tab" data-page="clients" onclick="showPage('clients',this)">👥 Clienti</button>
 <button class="tab" data-page="fleet" onclick="showPage('fleet',this)">🚗 Parco Auto</button>
@@ -380,13 +422,19 @@ header{padding:6px 10px;gap:6px}
 <!-- ══ PLANNING ══ -->
 <div class="page active" id="page-planning">
 <div class="legend">
-<span style="font-weight:500">Legenda:</span>
+<span style="font-weight:500">Tipo:</span>
 <div class="li"><div class="ld" style="background:#2563eb"></div>Noleggio</div>
 <div class="li"><div class="ld" style="background:#f97316"></div>Manutenzione</div>
 <div class="li"><div class="ld" style="background:#8b5cf6"></div>Prestito</div>
+<span style="color:var(--border2);margin:0 4px">|</span>
+<span style="font-weight:500">Stato:</span>
+<div class="li" title="Auto non ancora consegnata"><div class="ld" style="background:#2563eb;background-image:repeating-linear-gradient(45deg,transparent 0,transparent 3px,rgba(255,255,255,.35) 3px,rgba(255,255,255,.35) 5px);border:1px dashed rgba(255,255,255,.5);opacity:.78"></div>🕐 Prenotato</div>
+<div class="li" title="Auto consegnata, in uso"><div class="ld" style="background:#2563eb;position:relative;display:inline-flex;align-items:center;justify-content:center"><span style="width:5px;height:5px;border-radius:50%;background:#22c55e;box-shadow:0 0 0 2px rgba(34,197,94,.5)"></span></div>🚗 In corso</div>
+<div class="li" title="Auto rientrata"><div class="ld" style="background:#2563eb;opacity:.5;filter:grayscale(55%)"></div>✅ Chiuso</div>
+<span style="color:var(--border2);margin:0 4px">|</span>
 <div class="li"><div class="ld" style="background:rgba(245,158,11,.22);border:1px solid rgba(245,158,11,.5)"></div>Oggi</div>
 <div class="spacer" style="flex:1"></div>
-<span style="font-size:10px;color:var(--text3)">Clicca e trascina per creare un noleggio</span>
+<span style="font-size:10px;color:var(--text3)">Trascina per creare · Click per modificare · Tasto destro per consegna/restituzione</span>
 </div>
 <div class="avail-bar">
 <span style="color:var(--text2);font-size:11px">Verifica disponibilità:</span>
@@ -427,6 +475,12 @@ header{padding:6px 10px;gap:6px}
 <option value="parziale">Parziale</option>
 <option value="nonpagato">Non pagato</option>
 </select>
+<select id="listOpStatus" onchange="renderList()">
+<option value="">Tutti gli stati op.</option>
+<option value="prenotato">🕐 Prenotato</option>
+<option value="incorso">🚗 In corso</option>
+<option value="chiuso">✅ Chiuso</option>
+</select>
 <div class="spacer" style="flex:1"></div>
 <span id="listCount" style="font-size:11px;color:var(--text2)"></span>
 <span id="listTotRev" style="font-size:11px;color:var(--accent);font-family:'DM Mono',monospace"></span>
@@ -442,10 +496,44 @@ header{padding:6px 10px;gap:6px}
 <th onclick="sortList('giorni')">Gg</th>
 <th onclick="sortList('totale')">Totale</th>
 <th>Pagamento</th>
-<th>Stato</th>
+<th>Tipo</th>
+<th>Stato Op.</th>
 <th>Note</th>
 </tr></thead>
 <tbody id="listBody"></tbody>
+</table>
+</div>
+</div>
+
+<!-- ══ PREVENTIVI ══ -->
+<div class="page" id="page-preventivi">
+<div class="list-bar">
+<input type="text" id="prvSearch" placeholder="Cerca cliente…" oninput="renderPreventivi()">
+<select id="prvStatus" onchange="renderPreventivi()">
+<option value="">Tutti gli stati</option>
+<option value="in_attesa">⏳ In attesa</option>
+<option value="accettato">✅ Accettato</option>
+<option value="rifiutato">❌ Rifiutato</option>
+<option value="scaduto">⌛ Scaduto</option>
+</select>
+<div class="spacer" style="flex:1"></div>
+<span id="prvCount" style="font-size:11px;color:var(--text2)"></span>
+<button class="hbtn accent" onclick="openPreventivo(null)">+ Nuovo Preventivo</button>
+</div>
+<div class="list-wrap">
+<table class="rtable">
+<thead><tr>
+<th>N° PRV</th>
+<th>Emesso</th>
+<th>Cliente</th>
+<th>Auto</th>
+<th>Periodo</th>
+<th>Gg</th>
+<th>Totale</th>
+<th>Valido fino</th>
+<th>Stato</th>
+</tr></thead>
+<tbody id="prvBody"></tbody>
 </table>
 </div>
 </div>
@@ -516,6 +604,19 @@ header{padding:6px 10px;gap:6px}
 </div>
 
 <div class="settings-section">
+<div class="settings-title">💼 Preventivi</div>
+<div class="fg">
+<div class="ff"><label>Validità predefinita (giorni dalla data di emissione)</label><input type="number" id="set_preventivo_validity" min="1" max="365" placeholder="7" oninput="saveSettings()"></div>
+</div>
+</div>
+
+<div class="settings-section">
+<div class="settings-title">🔒 Informativa Privacy</div>
+<div style="font-size:11px;color:var(--text3);margin-bottom:8px">Testo dell'informativa privacy (GDPR) che viene allegata automaticamente a ogni contratto e preventivo. Personalizzala con i dati del titolare del trattamento. <strong>Ti consigliamo di farla rivedere a un consulente prima di usarla in produzione.</strong></div>
+<div class="ff"><textarea id="set_privacy" rows="14" style="font-family:'DM Mono',monospace;font-size:11px" oninput="saveSettings()" placeholder="Testo informativa privacy..."></textarea></div>
+</div>
+
+<div class="settings-section">
 <div class="settings-title">🗑 Gestione dati</div>
 <div style="display:flex;gap:10px;flex-wrap:wrap">
 <button class="btn btn-ghost" onclick="exportData()">↓ Esporta backup JSON</button>
@@ -541,6 +642,7 @@ header{padding:6px 10px;gap:6px}
 <button class="mclose" onclick="closeM('mRental')">✕</button>
 </div>
 <div class="mbody">
+<div id="opStatusBox" class="op-status-box op-prenotato"><span class="op-label">Stato:</span> <span class="op-value">🕐 Prenotato</span></div>
 <div class="conflict" id="conflictWarn">⚠️ Le date si sovrappongono con un noleggio esistente.</div>
 
 <div class="fsec">
@@ -558,14 +660,6 @@ header{padding:6px 10px;gap:6px}
 <div class="ff"><label>Targa</label><div class="ro-val" id="dTarga">—</div></div>
 <div class="ff"><label>Modello</label><div class="ro-val" id="dModello">—</div></div>
 <div class="ff"><label>Categoria</label><div class="ro-val" id="dCategoria">—</div></div>
-</div>
-<div class="fg t4" style="margin-top:8px">
-<div class="ff"><label>KM consegna</label><input type="number" id="f_km" placeholder="45200"></div>
-<div class="ff"><label>KM restituzione</label><input type="number" id="f_km_r" placeholder="45800"></div>
-<div class="ff"><label>Carburante cons.</label>
-<select id="f_fuel"><option value="">—</option><option>Pieno</option><option>3/4</option><option>1/2</option><option>1/4</option><option>Riserva</option></select></div>
-<div class="ff"><label>Pulizia cons.</label>
-<select id="f_clean"><option value="">—</option><option>Pulito</option><option>Sporco</option></select></div>
 </div>
 </div>
 
@@ -636,49 +730,90 @@ header{padding:6px 10px;gap:6px}
 </div>
 </div>
 
-<div class="fsec">
-<div class="fsec-t">Verbale danni — Consegna</div>
-<div class="fg t4">
-<div class="ff"><label>Carrozzeria</label>
+<div class="fsec" id="sec_consegna">
+<div class="fsec-t">📤 Consegna</div>
+<div class="qa-row">
+<button class="qa-btn" type="button" onclick="setConsegnaNow()">⏱ Registra ora</button>
+<span style="font-size:10px;color:var(--text3)">Compila al momento dell'uscita dell'auto</span>
+</div>
+<div class="fg t3">
+<div class="ff"><label>Data e ora consegna</label><input type="datetime-local" id="f_consegna_at"></div>
+<div class="ff"><label>Operatore</label>
+<select id="f_consegna_by" onchange="toggleConsegnaByOther()">
+<option value="">—</option>
+<option>Silvio</option>
+<option>Michele</option>
+<option>Altro</option>
+</select></div>
+<div class="ff" id="wrap_consegna_by_other" style="display:none"><label>Nome operatore</label><input type="text" id="f_consegna_by_other" placeholder="Nome…"></div>
+</div>
+<div class="fg t4" style="margin-top:8px">
+<div class="ff"><label>KM consegna</label><input type="number" id="f_km" placeholder="45200"></div>
+<div class="ff"><label>Carburante</label>
+<select id="f_fuel"><option value="">—</option><option>Pieno</option><option>3/4</option><option>1/2</option><option>1/4</option><option>Riserva</option></select></div>
+<div class="ff"><label>Pulizia</label>
+<select id="f_clean"><option value="">—</option><option>Pulito</option><option>Sporco</option></select></div>
+<div class="ff"><label>Stato carrozzeria</label>
 <select id="f_d_carr"><option value="">—</option><option>✅ OK</option><option>⚠️ Lieve</option><option>🔴 Grave</option></select></div>
-<div class="ff"><label>Vetri</label>
+<div class="ff"><label>Stato vetri</label>
 <select id="f_d_vetri"><option value="">—</option><option>✅ OK</option><option>⚠️ Lieve</option><option>🔴 Grave</option></select></div>
-<div class="ff"><label>Interno</label>
+<div class="ff"><label>Stato interno</label>
 <select id="f_d_int"><option value="">—</option><option>✅ OK</option><option>⚠️ Lieve</option><option>🔴 Grave</option></select></div>
 <div class="ff"><label>Cerchi/Gomme</label>
 <select id="f_d_cer"><option value="">—</option><option>✅ OK</option><option>⚠️ Lieve</option><option>🔴 Grave</option></select></div>
-<div class="ff s4"><label>Note danni consegna</label><input type="text" id="f_d_note" placeholder="Descrizione danni esistenti…"></div>
+<div class="ff s4"><label>Note / danni preesistenti</label><input type="text" id="f_d_note" placeholder="Es: graffio paraurti dx, antenna piegata…"></div>
 </div>
 </div>
 
-<div class="fsec">
-<div class="fsec-t">Verbale — Restituzione</div>
-<div class="fg t4">
-<div class="ff"><label>Carrozzeria resa</label>
-<select id="f_r_carr"><option value="">—</option><option>✅ OK</option><option>⚠️ Lieve</option><option>🔴 Grave</option></select></div>
-<div class="ff"><label>Vetri resi</label>
-<select id="f_r_vetri"><option value="">—</option><option>✅ OK</option><option>⚠️ Lieve</option><option>🔴 Grave</option></select></div>
+<div class="fsec" id="sec_restituzione">
+<div class="fsec-t">📥 Restituzione</div>
+<div class="qa-row">
+<button class="qa-btn green" type="button" onclick="setRestituzioneNow()">⏱ Registra ora</button>
+<span style="font-size:10px;color:var(--text3)">Compila al rientro dell'auto. Il noleggio sarà marcato come Chiuso.</span>
+</div>
+<div class="fg t3">
+<div class="ff"><label>Data e ora restituzione</label><input type="datetime-local" id="f_restituzione_at"></div>
+<div class="ff"><label>Operatore</label>
+<select id="f_restituzione_by" onchange="toggleRestituzioneByOther()">
+<option value="">—</option>
+<option>Silvio</option>
+<option>Michele</option>
+<option>Altro</option>
+</select></div>
+<div class="ff" id="wrap_restituzione_by_other" style="display:none"><label>Nome operatore</label><input type="text" id="f_restituzione_by_other" placeholder="Nome…"></div>
+</div>
+<div class="fg t4" style="margin-top:8px">
+<div class="ff"><label>KM restituzione</label><input type="number" id="f_km_r" placeholder="45800"></div>
 <div class="ff"><label>Carburante reso</label>
 <select id="f_r_fuel"><option value="">—</option><option>Pieno</option><option>3/4</option><option>1/2</option><option>1/4</option><option>Riserva</option></select></div>
 <div class="ff"><label>Pulizia resa</label>
 <select id="f_r_clean"><option value="">—</option><option>Pulito</option><option>Sporco</option><option>Da lavare</option></select></div>
-<div class="ff s4"><label>Note restituzione</label><input type="text" id="f_r_note" placeholder="Nuovi danni, mancanze…"></div>
+<div class="ff"><label>Stato carrozzeria</label>
+<select id="f_r_carr"><option value="">—</option><option>✅ OK</option><option>⚠️ Lieve</option><option>🔴 Grave</option></select></div>
+<div class="ff"><label>Stato vetri</label>
+<select id="f_r_vetri"><option value="">—</option><option>✅ OK</option><option>⚠️ Lieve</option><option>🔴 Grave</option></select></div>
+<div class="ff"><label>Stato interno</label>
+<select id="f_r_int"><option value="">—</option><option>✅ OK</option><option>⚠️ Lieve</option><option>🔴 Grave</option></select></div>
+<div class="ff"><label>Cerchi/Gomme</label>
+<select id="f_r_cer"><option value="">—</option><option>✅ OK</option><option>⚠️ Lieve</option><option>🔴 Grave</option></select></div>
+<div class="ff s4"><label>Note / nuovi danni rilevati</label><input type="text" id="f_r_note" placeholder="Descrizione di eventuali nuovi danni o mancanze…"></div>
 </div>
 </div>
 
 <div class="fsec">
-<div class="fsec-t">Stato e Colore</div>
+<div class="fsec-t">Tipo e Note</div>
 <div class="fg">
-<div class="ff"><label>Stato noleggio</label>
+<div class="ff"><label>Tipo</label>
 <select id="f_stato"><option value="noleggio">Noleggio</option><option value="opzione">Prestito</option><option value="manutenzione">Manutenzione</option></select></div>
-<div class="ff"><label>Colore barra planning</label><div class="cswatch-grid" id="colorPick"></div></div>
-<div class="ff s2"><label>Note</label><textarea id="f_note"></textarea></div>
+<div class="ff s2"><label>Note generali</label><textarea id="f_note"></textarea></div>
 </div>
 </div>
 </div>
 <div class="mfoot">
 <button class="btn btn-danger" id="btnDel" onclick="deleteRental()" style="display:none;margin-right:auto">✕ Elimina</button>
+<button class="btn btn-ghost" id="btnUnlock" onclick="unlockRental()" style="display:none">🔓 Riapri</button>
 <button class="btn btn-ghost" onclick="closeM('mRental')">Annulla</button>
+<button class="btn btn-ghost" onclick="printPrivacyStandalone()">🔒 Privacy</button>
 <button class="btn btn-teal" onclick="printContract()">🖨 Contratto</button>
 <button class="btn btn-accent" onclick="saveRental()">✓ Salva</button>
 </div>
@@ -743,6 +878,79 @@ header{padding:6px 10px;gap:6px}
 <button class="btn btn-danger" id="btnCliDel" onclick="deleteClient()" style="display:none;margin-right:auto">✕ Elimina</button>
 <button class="btn btn-ghost" onclick="closeM('mClient')">Annulla</button>
 <button class="btn btn-accent" onclick="saveClient()">✓ Salva</button>
+</div>
+</div>
+</div>
+
+<!-- ══ MODAL PREVENTIVO ══ -->
+<div class="overlay" id="mPreventivo">
+<div class="modal">
+<div class="mhd">
+<div><div class="mtitle" id="mPrvTitle">Nuovo Preventivo</div><div class="msub">Documento non vincolante, da convertire in contratto al momento della firma</div></div>
+<button class="mclose" onclick="closeM('mPreventivo')">✕</button>
+</div>
+<div class="mbody">
+
+<div class="fsec">
+<div class="fsec-t">Cliente</div>
+<div class="fg">
+<div class="ff"><label>Tipo</label>
+<select id="pv_tipo"><option value="">—</option><option>Privato</option><option>Azienda</option></select></div>
+<div class="ff"><label>Cognome / Rag. Soc. *</label><input type="text" id="pv_cognome"></div>
+<div class="ff"><label>Nome</label><input type="text" id="pv_nome"></div>
+<div class="ff"><label>C.F. / P.IVA</label><input type="text" id="pv_cf"></div>
+<div class="ff s2"><label>Indirizzo</label><input type="text" id="pv_indirizzo"></div>
+<div class="ff"><label>Telefono</label><input type="tel" id="pv_tel"></div>
+<div class="ff"><label>Email</label><input type="email" id="pv_email"></div>
+</div>
+</div>
+
+<div class="fsec">
+<div class="fsec-t">Veicolo e Periodo</div>
+<div class="fg">
+<div class="ff s2"><label>Auto *</label>
+<select id="pv_car" onchange="pvCarChanged()"><option value="">— Seleziona auto —</option></select></div>
+<div class="ff"><label>Data inizio *</label><input type="date" id="pv_start" onchange="prvCalcTot()"></div>
+<div class="ff"><label>Data fine *</label><input type="date" id="pv_end" onchange="prvCalcTot()"></div>
+<div class="ff"><label>Giorni</label><div class="ro-val" id="pv_days">—</div></div>
+<div class="ff"><label>Stato</label>
+<select id="pv_stato">
+<option value="in_attesa">⏳ In attesa</option>
+<option value="accettato">✅ Accettato</option>
+<option value="rifiutato">❌ Rifiutato</option>
+<option value="scaduto">⌛ Scaduto</option>
+</select></div>
+</div>
+</div>
+
+<div class="fsec">
+<div class="fsec-t">Corrispettivo <span id="pv_suggest" style="font-size:10px;color:var(--text3);font-weight:400;text-transform:none;letter-spacing:0"></span></div>
+<div class="fg t3">
+<div class="ff"><label>Prezzo/giorno (€)</label><input type="number" id="pv_prezzo" placeholder="50" oninput="prvCalcTot()"></div>
+<div class="ff"><label>Sconto %</label><input type="number" id="pv_sp" placeholder="0" oninput="prvCalcTot()"></div>
+<div class="ff"><label>Sconto € fisso</label><input type="number" id="pv_se" placeholder="0" oninput="prvCalcTot()"></div>
+</div>
+<div class="pcalc" id="pv_calc" style="display:none">
+<div class="prow"><span>Imponibile</span><span id="pv_base">—</span></div>
+<div class="prow"><span>Sconto</span><span id="pv_sc">—</span></div>
+<div class="prow"><span>IVA 22%</span><span id="pv_iva">—</span></div>
+<div class="prow tot"><span>TOTALE IVA inclusa</span><span id="pv_tot">—</span></div>
+</div>
+</div>
+
+<div class="fsec">
+<div class="fsec-t">Note</div>
+<div class="ff"><textarea id="pv_note" placeholder="Note aggiuntive per il cliente (optional inclusi, riserve, condizioni speciali…)"></textarea></div>
+</div>
+
+</div>
+<div class="mfoot">
+<button class="btn btn-danger" id="btnPrvDel" onclick="deletePreventivo()" style="display:none;margin-right:auto">✕ Elimina</button>
+<button class="btn btn-green" id="btnPrvConvert" onclick="convertPreventivoToRental()" style="display:none">→ Converti in Noleggio</button>
+<button class="btn btn-ghost" onclick="closeM('mPreventivo')">Annulla</button>
+<button class="btn btn-ghost" onclick="printPrivacyFromPreventivo()">🔒 Privacy</button>
+<button class="btn btn-teal" onclick="printPreventivo()">🖨 Stampa Preventivo</button>
+<button class="btn btn-accent" onclick="savePreventivo()">✓ Salva</button>
 </div>
 </div>
 </div>
