@@ -107,18 +107,14 @@ header{background:var(--surf);border-bottom:1px solid var(--border);min-height:5
 .plan-nav.left{left:8px;top:50%;transform:translateY(-50%);flex-direction:column}
 .plan-nav.right{right:8px;top:50%;transform:translateY(-50%);flex-direction:column}
 .plan-nav.bottom{right:10px;bottom:12px;flex-direction:row}
-.plan-nav button{pointer-events:auto;background:rgba(17,31,56,.85);border:1px solid var(--border2);color:var(--text);width:34px;height:34px;border-radius:50%;cursor:pointer;font-size:15px;font-weight:600;display:flex;align-items:center;justify-content:center;transition:.15s;box-shadow:0 2px 8px rgba(0,0,0,.35);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px)}
-.plan-nav button:hover{background:var(--accent);color:var(--navy);border-color:var(--accent);transform:scale(1.08)}
+.plan-nav button{pointer-events:auto;background:rgba(17,31,56,.28);border:1px solid rgba(255,255,255,.15);color:var(--text);width:32px;height:32px;border-radius:50%;cursor:pointer;font-size:15px;font-weight:600;display:flex;align-items:center;justify-content:center;transition:.18s;box-shadow:0 2px 6px rgba(0,0,0,.2);backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px);opacity:.4}
+.plan-nav button:hover{background:var(--accent);color:var(--navy);border-color:var(--accent);opacity:1;transform:scale(1.12);box-shadow:0 4px 12px rgba(245,158,11,.35)}
 .plan-nav button:active{transform:scale(.95)}
-.plan-nav .today-btn{width:auto;padding:0 14px;border-radius:18px;font-size:11px;font-weight:600;letter-spacing:.4px;text-transform:uppercase;background:var(--accent);color:var(--navy);border-color:var(--accent)}
-.plan-nav .today-btn:hover{background:var(--accent2);border-color:var(--accent2)}
-[data-theme="light"] .plan-nav button{background:rgba(244,248,252,.92);color:var(--text)}
-[data-theme="medium"] .plan-nav button{background:rgba(71,90,120,.9)}
+[data-theme="light"] .plan-nav button{background:rgba(15,31,61,.18);color:var(--navy);border-color:rgba(15,31,61,.2)}
+[data-theme="medium"] .plan-nav button{background:rgba(15,25,45,.4)}
 @media(max-width:768px){
 .plan-nav.left,.plan-nav.right{display:none}
-.plan-nav.bottom{right:8px;bottom:8px;gap:5px}
-.plan-nav.bottom button{width:38px;height:38px;font-size:16px}
-.plan-nav.bottom .today-btn{width:auto;padding:0 12px;height:32px;font-size:10px}
+.plan-nav.bottom{display:none}
 }
 .ptable{border-collapse:collapse;table-layout:fixed;min-width:max-content}
 .mhdr{background:var(--navy2);color:var(--accent);font-size:10px;font-weight:600;letter-spacing:.7px;text-transform:uppercase;text-align:center;height:22px;border-bottom:1px solid var(--border);position:sticky;top:0;z-index:30;user-select:none}
@@ -350,6 +346,7 @@ header{padding:6px 10px;gap:6px}
 <div class="year-val" id="yearVal">2025</div>
 <button onclick="changeYear(1)">›</button>
 </div>
+<button class="hbtn accent" onclick="scrollToToday(true)" title="Vai a oggi nel planning">📍 Oggi</button>
 <div class="spacer"></div>
 <div class="tabs">
 <button class="tab active" data-page="planning" onclick="showPage('planning',this)">📅 Planning</button>
@@ -407,12 +404,6 @@ header{padding:6px 10px;gap:6px}
 </div>
 <div class="plan-nav right">
 <button onclick="planScroll('right')" title="Scorri avanti (1 settimana)">›</button>
-</div>
-<!-- Controlli sempre visibili in basso a destra (desktop + mobile) -->
-<div class="plan-nav bottom">
-<button onclick="planScroll('month-prev')" title="Mese precedente">«</button>
-<button class="today-btn" onclick="scrollToToday(true)" title="Vai a oggi">Oggi</button>
-<button onclick="planScroll('month-next')" title="Mese successivo">»</button>
 </div>
 </div>
 </div>
