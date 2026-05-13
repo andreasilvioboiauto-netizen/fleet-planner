@@ -100,6 +100,8 @@ async function fbLoadAll(){
     document.getElementById('logoutBtn').style.display='flex';
     document.getElementById('syncIndicator').style.display='flex';
     buildTable();
+    // Solo al primo caricamento, porta la vista sulla data di oggi
+    setTimeout(()=>scrollToToday(false),100);
   }catch(e){
     console.error('Load error',e);
     showSync('Errore caricamento','err');
@@ -327,7 +329,7 @@ function buildTable(){
     });
     t.appendChild(tr);
   });
-  renderBars(); checkAlerts(); setTimeout(()=>scrollToToday(false),80);
+  renderBars(); checkAlerts();
 }
 
 function getCarExpiry(car){
@@ -368,8 +370,6 @@ function scrollToToday(smooth){
     document.getElementById('yearVal').textContent=curYear;
     DAYS=getDays(curYear);
     buildTable();
-    // buildTable richiama scrollToToday(false) in coda → evito doppio scroll
-    return;
   }
   const idx=DAYS.findIndex(d=>dk(d)===dk(TODAY)); if(idx<0)return;
   const w=document.getElementById('planWrap');
