@@ -327,7 +327,7 @@ function buildTable(){
     });
     t.appendChild(tr);
   });
-  renderBars(); checkAlerts(); setTimeout(scrollToToday,80);
+  renderBars(); checkAlerts(); setTimeout(()=>scrollToToday(false),80);
 }
 
 function getCarExpiry(car){
@@ -355,11 +355,29 @@ function checkAlerts(){
   else{banner.classList.remove('show');}
 }
 
-function scrollToToday(){
+function scrollToToday(smooth){
   const idx=DAYS.findIndex(d=>dk(d)===dk(TODAY)); if(idx<0)return;
   const w=document.getElementById('planWrap');
   if(!w)return;
-  w.scrollLeft=Math.max(0,(idx*28)+185-w.clientWidth/2);
+  const target=Math.max(0,(idx*28)+185-w.clientWidth/2);
+  if(smooth){
+    w.scrollTo({left:target,behavior:'smooth'});
+  } else {
+    w.scrollLeft=target;
+  }
+}
+
+// Scorrimento planning con i pulsanti di navigazione
+function planScroll(dir){
+  const w=document.getElementById('planWrap');
+  if(!w)return;
+  const cellW=28;
+  let delta=0;
+  if(dir==='left')       delta=-cellW*7;   // 1 settimana indietro
+  else if(dir==='right') delta= cellW*7;   // 1 settimana avanti
+  else if(dir==='month-prev') delta=-cellW*30;
+  else if(dir==='month-next') delta= cellW*30;
+  w.scrollBy({left:delta,behavior:'smooth'});
 }
 
 function renderBars(){
